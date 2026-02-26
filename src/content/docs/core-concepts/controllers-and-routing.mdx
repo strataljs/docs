@@ -1,0 +1,243 @@
+---
+title: Controllers and Routing
+description: Using @Controller, @Route, RESTful conventions, and RouterContext.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Controllers are where you handle HTTP requests. Each controller is a class decorated with `@Controller` that defines one or more route handler methods. Stratal uses a convention-based approach where method names map directly to HTTP verbs and paths.
+
+## Create a controller
+
+Decorate a class with `@Controller` and implement the `IController` interface:
+
+```typescript
+import { Controller, IController, Route, RouterContext } from 'stratal'
+import { z } from 'stratal/validation'
+
+@Controller('/api/users')
+export class UsersController implements IController {
+  @Route({
+    response: z.object({
+      users: z.array(z.object({ id: z.string(), name: z.string() })),
+    }),
+  })
+  index(ctx: RouterContext) {
+    return ctx.json({ users: [] })
+  }
+}
+```
+
+The `@Controller` decorator takes two arguments:
+
+1. **`route`** (required) — the base path for all routes in this controller.
+2. **`options`** (optional) — an object with:
+
+| Option          | Type         | Description                                           |
+| --------------- | ------------ | ----------------------------------------------------- |
+| `tags`          | `string[]`   | OpenAPI tags applied to every route in the controller |
+| `security`      | `SecurityScheme[]` | Security schemes applied to every route         |
+| `hideFromDocs`  | `boolean`    | Exclude all routes from the OpenAPI specification     |
+
+```typescript
+@Controller('/api/admin', {
+  tags: ['Admin'],
+  security: ['bearerAuth'],
+  hideFromDocs: true,
+})
+export class AdminController implements IController {
+  // ...
+}
+```
+
+## Convention-based routing
+
+Stratal maps method names on the `IController` interface to HTTP verbs and paths automatically. You only implement the methods you need:
+
+| Method      | HTTP verb | Path               | Default status code |
+| ----------- | --------- | ------------------ | ------------------- |
+| `index()`   | GET       | `/route`           | 200                 |
+| `show()`    | GET       | `/route/:id`       | 200                 |
+| `create()`  | POST      | `/route`           | 201                 |
+| `update()`  | PUT       | `/route/:id`       | 200                 |
+| `patch()`   | PATCH     | `/route/:id`       | 200                 |
+| `destroy()` | DELETE    | `/route/:id`       | 200                 |
+
+For a controller at `/api/users`, defining `show()` automatically registers `GET /api/users/:id`. Defining `create()` registers `POST /api/users` with a `201` status code.
+
+<Aside type="tip">
+  You never need to manually specify HTTP methods or path patterns. Just implement the method with the right name and Stratal handles the rest.
+</Aside>
+
+## The @Route decorator
+
+The `@Route` decorator configures individual route methods. It accepts a `RouteConfig` object:
+
+```typescript
+import { Controller, IController, Route, RouterContext } from 'stratal'
+import { z } from 'stratal/validation'
+
+@Controller('/api/users')
+export class UsersController implements IController {
+  @Route({
+    body: z.object({
+      name: z.string().min(1),
+      email: z.string().email(),
+    }),
+    response: z.object({
+      id: z.string(),
+      name: z.string(),
+      email: z.string(),
+    }),
+    summary: 'Create a new user',
+    description: 'Registers a new user account',
+    tags: ['Users'],
+  })
+  create(ctx: RouterContext) {
+    // body is validated before this method runs
+    // ...
+  }
+
+  @Route({
+    params: z.object({ id: z.string().uuid() }),
+    response: z.object({
+      id: z.string(),
+      name: z.string(),
+    }),
+  })
+  show(ctx: RouterContext) {
+    const id = ctx.param('id')
+    // ...
+  }
+}
+```
+
+The full `RouteConfig` interface:
+
+| Property        | Type                | Description                                    |
+| --------------- | ------------------- | ---------------------------------------------- |
+| `body`          | `ZodType`           | Validates the request body (POST, PUT, PATCH)  |
+| `params`        | `ZodObject`         | Validates path parameters                      |
+| `query`         | `ZodObject`         | Validates query string parameters              |
+| `response`      | `RouteResponse`     | Schema for the response body (used in OpenAPI) |
+| `tags`          | `string[]`          | OpenAPI tags for this route                    |
+| `security`      | `SecurityScheme[]`  | Security schemes for this route                |
+| `summary`       | `string`            | Short OpenAPI summary                          |
+| `description`   | `string`            | Detailed OpenAPI description                   |
+| `hideFromDocs`  | `boolean`           | Exclude this route from the OpenAPI spec       |
+
+<Aside type="note">
+  Zod schemas serve double duty: they validate incoming data at runtime and generate the OpenAPI specification. One source of truth for both.
+</Aside>
+
+## RouterContext
+
+Every route handler receives a `RouterContext` instance as its first argument. It provides methods to read the request and build the response:
+
+### Reading the request
+
+```typescript
+// Path parameter
+const id = ctx.param('id')
+
+// Query string parameter
+const page = ctx.query('page')
+
+// All query parameters as an object
+const filters = ctx.query()
+
+// Request header
+const auth = ctx.header('Authorization')
+
+// Parsed request body
+const data = await ctx.body<CreateUserDto>()
+```
+
+### Building the response
+
+```typescript
+// JSON response
+return ctx.json({ id: '1', name: 'Alice' })
+
+// JSON response with custom status
+return ctx.json({ id: '1' }, 201)
+
+// Plain text
+return ctx.text('OK')
+
+// HTML
+return ctx.html('<h1>Hello</h1>')
+
+// Redirect
+return ctx.redirect('/api/users/1')
+return ctx.redirect('/login', 302)
+```
+
+### Locale and container access
+
+```typescript
+// Get and set the request locale
+const locale = ctx.getLocale()
+ctx.setLocale('fr')
+
+// Access the DI container for the current request
+const container = ctx.getContainer()
+const service = container.resolve(MyService)
+```
+
+## The handle() escape hatch
+
+If the six convention-based methods do not fit your needs, you can implement `handle()` for full control over routing. When `handle()` is defined, it receives all requests that match the controller's base path and Stratal skips convention-based routing for that controller.
+
+```typescript
+import { Controller, IController, RouterContext } from 'stratal'
+
+@Controller('/api/health')
+export class HealthController implements IController {
+  handle(ctx: RouterContext) {
+    return ctx.json({ status: 'ok' })
+  }
+}
+```
+
+<Aside type="caution">
+  When you define `handle()`, convention methods like `index()` or `show()` on the same controller are ignored. Use `handle()` only when you need routing behavior that does not map to standard REST conventions.
+</Aside>
+
+## Guards on routes
+
+Guards control whether a request is allowed to proceed. Apply them at the controller level or on individual methods using the `@UseGuards` decorator:
+
+```typescript
+import { Controller, IController, UseGuards, Route, RouterContext } from 'stratal'
+import { AuthGuard } from './auth.guard'
+import { RolesGuard } from './roles.guard'
+
+@Controller('/api/orders')
+@UseGuards(AuthGuard) // applies to all methods
+export class OrdersController implements IController {
+  @Route({ response: orderListSchema })
+  index(ctx: RouterContext) {
+    // AuthGuard runs before this method
+    return ctx.json({ orders: [] })
+  }
+
+  @UseGuards(RolesGuard) // applies only to this method (in addition to controller guards)
+  @Route({ response: orderSchema })
+  destroy(ctx: RouterContext) {
+    // AuthGuard and RolesGuard both run before this method
+    // ...
+  }
+}
+```
+
+Controller-level guards run first, followed by method-level guards. If any guard returns `false`, Stratal rejects the request before the handler executes.
+
+For a complete guide on writing guards, see the [Guards guide](/guides/guards/).
+
+## Next steps
+
+- [Modules](/core-concepts/modules/) to learn how controllers are registered in modules.
+- [Dependency Injection](/core-concepts/dependency-injection/) to inject services into your controllers.
+- [Guards guide](/guides/guards/) for writing custom guards.
+- [OpenAPI overview](/openapi/overview/) to see how `@Route` schemas generate API documentation.

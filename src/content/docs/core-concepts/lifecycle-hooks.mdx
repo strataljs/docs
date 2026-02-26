@@ -1,0 +1,154 @@
+---
+title: Lifecycle Hooks
+description: OnInitialize and OnShutdown interfaces and their use cases.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Lifecycle hooks let modules run code at specific points during the application lifecycle. Stratal provides two hooks: one that fires after module initialization and one that fires during shutdown.
+
+## OnInitialize
+
+The `OnInitialize` interface defines an `onInitialize()` method that runs after all of a module's providers have been registered in the DI container. Implement it directly on your module class:
+
+```typescript
+import { Module, OnInitialize, ModuleContext } from 'stratal'
+
+@Module({
+  providers: [CacheService],
+})
+export class CacheModule implements OnInitialize {
+  onInitialize({ container, logger }: ModuleContext) {
+    logger.info('CacheModule initialized')
+
+    const cache = container.resolve(CacheService)
+    cache.warmUp()
+  }
+}
+```
+
+The `onInitialize` method can also be async:
+
+```typescript
+@Module({
+  providers: [DatabaseService],
+})
+export class DatabaseModule implements OnInitialize {
+  async onInitialize({ container, logger }: ModuleContext) {
+    const db = container.resolve(DatabaseService)
+    await db.runMigrations()
+    logger.info('Database migrations complete')
+  }
+}
+```
+
+Common use cases for `onInitialize`:
+
+- Seed initial data or warm caches
+- Run database migrations
+- Register conditional bindings (see [Providers](/core-concepts/providers/))
+- Extend services with decorators
+- Connect to external resources
+- Register additional providers dynamically
+
+## OnShutdown
+
+The `OnShutdown` interface defines an `onShutdown()` method that runs when the application is shutting down:
+
+```typescript
+import { Module, OnShutdown, ModuleContext } from 'stratal'
+
+@Module({
+  providers: [DatabaseService],
+})
+export class DatabaseModule implements OnShutdown {
+  onShutdown({ container, logger }: ModuleContext) {
+    const db = container.resolve(DatabaseService)
+    db.disconnect()
+    logger.info('Database connection closed')
+  }
+}
+```
+
+Common use cases for `onShutdown`:
+
+- Close database connections
+- Flush pending writes
+- Clean up temporary resources
+- Deregister from external services
+
+## ModuleContext
+
+Both lifecycle hooks receive a `ModuleContext` object with two properties:
+
+| Property    | Type            | Description                                                        |
+| ----------- | --------------- | ------------------------------------------------------------------ |
+| `container` | `Container`     | The DI container, used to resolve and register providers           |
+| `logger`    | `LoggerService` | A logger instance scoped to the module, for structured log output  |
+
+```typescript
+onInitialize({ container, logger }: ModuleContext) {
+  // Resolve any registered provider
+  const config = container.resolve(ConfigService)
+
+  // Register additional providers dynamically
+  container.registerValue(API_URL, config.get('API_URL'))
+
+  // Log with the module-scoped logger
+  logger.info('Feature module ready')
+}
+```
+
+## Execution order
+
+Module initialization follows the import tree. Stratal initializes imported modules before the module that imports them:
+
+```typescript
+@Module({
+  imports: [DatabaseModule, CacheModule],
+  controllers: [AppController],
+})
+export class AppModule implements OnInitialize {
+  onInitialize({ logger }: ModuleContext) {
+    // DatabaseModule.onInitialize() has already run
+    // CacheModule.onInitialize() has already run
+    logger.info('AppModule ready')
+  }
+}
+```
+
+This means leaf modules (those with no imports) initialize first, and the root module initializes last. This ordering guarantees that by the time a module's `onInitialize` runs, all of its dependencies are fully set up.
+
+<Aside type="tip">
+  If module B imports module A, you can safely resolve providers from module A inside module B's `onInitialize` hook.
+</Aside>
+
+## Combining both hooks
+
+A module can implement both `OnInitialize` and `OnShutdown`:
+
+```typescript
+import { Module, OnInitialize, OnShutdown, ModuleContext } from 'stratal'
+
+@Module({
+  providers: [ConnectionPool],
+})
+export class InfraModule implements OnInitialize, OnShutdown {
+  onInitialize({ container, logger }: ModuleContext) {
+    const pool = container.resolve(ConnectionPool)
+    pool.connect()
+    logger.info('Connection pool started')
+  }
+
+  onShutdown({ container, logger }: ModuleContext) {
+    const pool = container.resolve(ConnectionPool)
+    pool.disconnect()
+    logger.info('Connection pool stopped')
+  }
+}
+```
+
+## Next steps
+
+- [Modules](/core-concepts/modules/) to learn how modules are structured and composed.
+- [Dependency Injection](/core-concepts/dependency-injection/) to understand the container that lifecycle hooks interact with.

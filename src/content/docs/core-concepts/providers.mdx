@@ -1,0 +1,205 @@
+---
+title: Providers
+description: useClass, useValue, useFactory, useExisting, and conditional bindings.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Providers are the building blocks of Stratal's dependency injection system. A provider tells the DI container how to create or locate a dependency. There are five ways to register a provider, plus two advanced patterns for conditional logic and service decoration.
+
+## Class shorthand
+
+The simplest way to register a provider is to list the class directly in the `providers` array:
+
+```typescript
+import { Module } from 'stratal'
+import { UsersService } from './users.service'
+
+@Module({
+  providers: [UsersService],
+})
+export class UsersModule {}
+```
+
+This is shorthand for `{ provide: UsersService, useClass: UsersService }`. The container resolves `UsersService` by instantiating it with its constructor dependencies.
+
+## ClassProvider
+
+A `ClassProvider` maps a token to a class. Use it when the token differs from the class, or when you need to set a specific scope:
+
+```typescript
+import { Module, Scope } from 'stratal'
+
+@Module({
+  providers: [
+    {
+      provide: USER_REPOSITORY,
+      useClass: PostgresUserRepository,
+      scope: Scope.Singleton,
+    },
+  ],
+})
+export class UsersModule {}
+```
+
+| Property   | Type              | Description                                        |
+| ---------- | ----------------- | -------------------------------------------------- |
+| `provide`  | `InjectionToken`  | The token to register under                        |
+| `useClass` | `Constructor`     | The class to instantiate                           |
+| `scope`    | `Scope`           | Optional. Defaults to `Transient` if not specified |
+
+## ValueProvider
+
+A `ValueProvider` registers an existing value. The container returns this exact value every time the token is resolved, making it inherently singleton-like:
+
+```typescript
+@Module({
+  providers: [
+    {
+      provide: APP_CONFIG,
+      useValue: {
+        apiUrl: 'https://api.example.com',
+        maxRetries: 3,
+      },
+    },
+  ],
+})
+export class AppModule {}
+```
+
+| Property   | Type             | Description                       |
+| ---------- | ---------------- | --------------------------------- |
+| `provide`  | `InjectionToken` | The token to register under       |
+| `useValue` | `T`              | The value to return on resolution |
+
+<Aside type="tip">
+  `ValueProvider` is ideal for configuration objects, constants, and pre-built instances that do not need construction.
+</Aside>
+
+## FactoryProvider
+
+A `FactoryProvider` uses a factory function to create the value. The `inject` array specifies dependencies that are resolved and passed as arguments to the factory:
+
+```typescript
+@Module({
+  providers: [
+    {
+      provide: DATABASE_CONNECTION,
+      useFactory: (config: ConfigService) => {
+        return new DatabaseConnection(config.get('DATABASE_URL'))
+      },
+      inject: [ConfigService],
+    },
+  ],
+})
+export class DatabaseModule {}
+```
+
+The factory can also be async:
+
+```typescript
+@Module({
+  providers: [
+    {
+      provide: DATABASE_CONNECTION,
+      useFactory: async (config: ConfigService) => {
+        const conn = new DatabaseConnection(config.get('DATABASE_URL'))
+        await conn.connect()
+        return conn
+      },
+      inject: [ConfigService],
+    },
+  ],
+})
+export class DatabaseModule {}
+```
+
+| Property     | Type               | Description                                      |
+| ------------ | ------------------ | ------------------------------------------------ |
+| `provide`    | `InjectionToken`   | The token to register under                      |
+| `useFactory` | `(...deps) => T`   | Factory function that creates the value           |
+| `inject`     | `InjectionToken[]` | Optional. Dependencies to resolve and pass to the factory |
+
+## ExistingProvider (aliases)
+
+An `ExistingProvider` creates an alias from one token to another. When you resolve the alias, the container resolves the target token instead:
+
+```typescript
+@Module({
+  providers: [
+    UsersService,
+    {
+      provide: USER_SERVICE_ALIAS,
+      useExisting: UsersService,
+    },
+  ],
+})
+export class UsersModule {}
+```
+
+| Property      | Type             | Description                               |
+| ------------- | ---------------- | ----------------------------------------- |
+| `provide`     | `InjectionToken` | The alias token                           |
+| `useExisting` | `InjectionToken` | The target token that the alias points to |
+
+This is useful when you want multiple tokens to resolve to the same underlying provider, or when migrating from one token to another without breaking existing consumers.
+
+## Conditional bindings
+
+Sometimes which implementation to use depends on runtime conditions. The container's `when()` method lets you register providers conditionally:
+
+```typescript
+container
+  .when((c) => c.resolve(CONFIG_TOKEN).get('env') === 'development')
+  .use(FORMATTER_TOKEN)
+  .give(PrettyFormatter)
+  .otherwise(JsonFormatter)
+```
+
+This reads as: "When the environment is development, use `PrettyFormatter` for the `FORMATTER_TOKEN`. Otherwise, use `JsonFormatter`."
+
+The predicate receives a container reference so you can resolve other services to make the decision. You typically call this inside a module's `onInitialize` lifecycle hook:
+
+```typescript
+import { Module, ModuleContext } from 'stratal'
+
+@Module({ providers: [PrettyFormatter, JsonFormatter] })
+export class LoggingModule {
+  onInitialize({ container }: ModuleContext) {
+    container
+      .when((c) => c.resolve(CONFIG_TOKEN).get('env') === 'development')
+      .use(FORMATTER_TOKEN)
+      .give(PrettyFormatter)
+      .otherwise(JsonFormatter)
+  }
+}
+```
+
+<Aside type="note">
+  You can pass `{ cache: true }` as a second argument to `when()` to cache the predicate result after the first evaluation. This avoids re-running the check on every resolution.
+</Aside>
+
+## Service decoration with extend()
+
+The `extend()` method wraps an existing service with a decorator. This is useful for adding cross-cutting concerns like logging or caching without modifying the original service:
+
+```typescript
+import { Module, ModuleContext } from 'stratal'
+
+@Module({ providers: [UsersService] })
+export class UsersModule {
+  onInitialize({ container }: ModuleContext) {
+    container.extend(UsersService, (original, c) => {
+      const logger = c.resolve(LoggerService)
+      return new LoggingUsersService(original, logger)
+    })
+  }
+}
+```
+
+After this call, any resolution of `UsersService` returns the wrapped `LoggingUsersService` instead. The decorator receives the original service instance and the container, so it can resolve additional dependencies.
+
+## Next steps
+
+- [Dependency Injection](/core-concepts/dependency-injection/) for scopes, tokens, and the two-tier container.
+- [Modules](/core-concepts/modules/) to understand how providers are organized.

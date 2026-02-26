@@ -1,0 +1,255 @@
+---
+title: Dependency Injection
+description: Two-tier container, scopes, symbol tokens, and constructor injection.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Dependency injection (DI) is a design pattern where classes receive their dependencies from an external source rather than creating them internally. Stratal has a built-in DI container that resolves and injects dependencies automatically, keeping your code loosely coupled and easy to test.
+
+## Make a class injectable
+
+To make a class available for injection, decorate it with `@Transient()`:
+
+```typescript
+import { Transient } from 'stratal'
+
+@Transient()
+export class UsersService {
+  findAll() {
+    return [{ id: '1', name: 'Alice' }]
+  }
+}
+```
+
+Now you can inject `UsersService` into any other injectable class via constructor injection:
+
+```typescript
+import { Controller, IController, inject, Route, RouterContext } from 'stratal'
+import { UsersService } from './users.service'
+
+@Controller('/api/users')
+export class UsersController implements IController {
+  constructor(@inject(UsersService) private readonly usersService: UsersService) {}
+
+  @Route({ response: usersSchema })
+  index(ctx: RouterContext) {
+    return ctx.json({ users: this.usersService.findAll() })
+  }
+}
+```
+
+The `@inject()` decorator tells the container which dependency to resolve for each constructor parameter.
+
+## Register providers in a module
+
+Injectable classes must be registered in a module's `providers` array before they can be resolved:
+
+```typescript
+import { Module } from 'stratal'
+import { UsersController } from './users.controller'
+import { UsersService } from './users.service'
+
+@Module({
+  controllers: [UsersController],
+  providers: [UsersService],
+})
+export class UsersModule {}
+```
+
+Listing a class directly in `providers` is shorthand for `{ provide: UsersService, useClass: UsersService }`. See [Providers](/core-concepts/providers/) for all registration options.
+
+## DI scopes
+
+Scopes control how often a new instance is created when a dependency is resolved. Stratal supports three scopes:
+
+| Scope         | Behavior                                    | When to use                                  |
+| ------------- | ------------------------------------------- | -------------------------------------------- |
+| `Transient`   | New instance every time it is resolved       | Stateless services (the default)             |
+| `Singleton`   | One shared instance for the entire application | Configuration, caches, connection pools     |
+| `Request`     | One instance per HTTP request                | Services that hold per-request state         |
+
+Set the scope when registering a provider:
+
+```typescript
+import { Module, Scope } from 'stratal'
+
+@Module({
+  providers: [
+    { provide: ConfigService, useClass: ConfigService, scope: Scope.Singleton },
+    { provide: RequestLogger, useClass: RequestLogger, scope: Scope.Request },
+    UsersService, // defaults to Transient
+  ],
+})
+export class AppModule {}
+```
+
+<Aside type="tip">
+  Start with `Transient` (the default). Only reach for `Singleton` when you need shared state or `Request` when you need per-request isolation.
+</Aside>
+
+## Injection tokens
+
+When you inject a concrete class, TypeScript's type metadata is enough for the container to find the right provider. But when you depend on an abstraction (an interface or a value), you need a **token** to identify it.
+
+Create tokens using any unique string:
+
+```typescript
+export const USER_REPOSITORY = 'UserRepository'
+```
+
+Register a provider against the token:
+
+```typescript
+@Module({
+  providers: [
+    { provide: USER_REPOSITORY, useClass: PostgresUserRepository },
+  ],
+})
+export class UsersModule {}
+```
+
+Then inject it using `@inject`:
+
+```typescript
+import { inject } from 'stratal'
+
+@Transient()
+export class UsersService {
+  constructor(
+    @inject(USER_REPOSITORY) private readonly repo: UserRepository,
+  ) {}
+}
+```
+
+### Built-in tokens
+
+Stratal provides a `DI_TOKENS` object with pre-defined tokens for framework services:
+
+```typescript
+import { DI_TOKENS } from 'stratal'
+```
+
+Commonly used tokens include:
+
+| Token                        | Provides                                      |
+| ---------------------------- | --------------------------------------------- |
+| `DI_TOKENS.CloudflareEnv`   | The Cloudflare `env` bindings object          |
+| `DI_TOKENS.ExecutionContext` | The Cloudflare `ExecutionContext`              |
+| `DI_TOKENS.Container`       | The DI container itself                       |
+| `DI_TOKENS.Application`     | The Stratal application instance              |
+| `DI_TOKENS.ErrorHandler`    | The registered error handler                  |
+| `DI_TOKENS.Database`        | The database service (if configured)          |
+
+## The two-tier container
+
+Stratal uses a two-tier container architecture:
+
+1. **Global container** — created once when the application boots. It holds singleton providers and serves as the parent for all request containers.
+2. **Request container** — a child container created for each incoming HTTP request. It inherits all registrations from the global container and adds request-scoped instances.
+
+When you resolve a transient or singleton provider, the global container handles it. When you resolve a request-scoped provider, the request container creates a fresh instance that lives only for the duration of that request.
+
+<Aside type="note">
+  This architecture is particularly important for Cloudflare Workers. Workers are stateless by design, so request-scoped providers ensure that per-request data (like authenticated user info or request-specific loggers) does not leak between requests, even when multiple requests share the same isolate.
+</Aside>
+
+### Access the container
+
+Inside a controller method, you can access the request container through `RouterContext`:
+
+```typescript
+@Route({ response: userSchema })
+show(ctx: RouterContext) {
+  const container = ctx.getContainer()
+  const service = container.resolve(UsersService)
+  // ...
+}
+```
+
+Inside lifecycle hooks and middleware, you receive the container as part of the `ModuleContext` or through direct injection.
+
+## Constructor injection vs InjectParam
+
+Stratal supports two styles of injection:
+
+**Constructor injection** resolves dependencies when the class is instantiated. Use it for dependencies your class always needs:
+
+```typescript
+import { Transient, inject } from 'stratal'
+
+@Transient()
+export class OrdersService {
+  constructor(
+    @inject(UsersService) private readonly usersService: UsersService,
+    @inject(PaymentService) private readonly paymentService: PaymentService,
+  ) {}
+}
+```
+
+**`@InjectParam`** resolves dependencies at the method level, directly in route handler parameters. Use it when a dependency is only needed for a specific route:
+
+```typescript
+import { InjectParam } from 'stratal'
+
+@Controller('/api/orders')
+export class OrdersController implements IController {
+  @Route({ response: orderSchema })
+  async show(
+    ctx: RouterContext,
+    @InjectParam(OrdersService) ordersService: OrdersService,
+    @InjectParam(CacheService) cache: CacheService,
+  ) {
+    // ordersService and cache are resolved from the request container
+    const id = ctx.param('id')
+    return ctx.json(await ordersService.findById(id))
+  }
+}
+```
+
+<Aside type="tip">
+  Prefer constructor injection for services your class uses across multiple methods. Use `@InjectParam` for one-off dependencies in a single route handler.
+</Aside>
+
+## Access Cloudflare bindings
+
+Cloudflare Workers receive environment bindings (KV namespaces, D1 databases, secrets, etc.) through the `env` object. Stratal registers this object in the container so you can inject it into any service:
+
+```typescript
+import { Transient, inject, DI_TOKENS } from 'stratal'
+
+@Transient()
+export class StorageService {
+  constructor(
+    @inject(DI_TOKENS.CloudflareEnv) private readonly env: Env,
+  ) {}
+
+  async get(key: string) {
+    return this.env.MY_KV_NAMESPACE.get(key)
+  }
+}
+```
+
+The `ExecutionContext` is also available for operations like `waitUntil()`:
+
+```typescript
+@Transient()
+export class BackgroundTaskService {
+  constructor(
+    @inject(DI_TOKENS.ExecutionContext) private readonly ctx: ExecutionContext,
+  ) {}
+
+  scheduleCleanup() {
+    this.ctx.waitUntil(this.cleanup())
+  }
+
+  private async cleanup() {
+    // runs after the response is sent
+  }
+}
+```
+
+## Next steps
+
+- [Providers](/core-concepts/providers/) for advanced registration patterns like factories, aliases, and conditional bindings.
+- [Modules](/core-concepts/modules/) to see how providers are organized across modules.

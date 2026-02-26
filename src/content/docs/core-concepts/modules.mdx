@@ -1,0 +1,195 @@
+---
+title: Modules
+description: The @Module decorator, imports, providers, and static vs dynamic modules.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Modules are the primary way you organize a Stratal application. A module groups related controllers, providers, and other modules into a cohesive unit. Every Stratal application has at least one module: the **root module**.
+
+## The @Module decorator
+
+The `@Module` decorator marks a class as a Stratal module and accepts a `ModuleOptions` object:
+
+```typescript
+import { Module } from 'stratal'
+
+@Module({
+  imports: [],
+  providers: [],
+  controllers: [],
+  consumers: [],
+  jobs: [],
+})
+export class AppModule {}
+```
+
+Each property is optional:
+
+| Property        | Description                                                         |
+| --------------- | ------------------------------------------------------------------- |
+| `imports`       | Other modules (or dynamic modules) whose providers this module needs |
+| `providers`     | Services and other injectable classes to register in the DI container |
+| `controllers`   | Controller classes that handle HTTP requests                        |
+| `consumers`     | Queue consumer classes                                              |
+| `jobs`          | Cron job classes                                                    |
+
+## The root module
+
+The root module is the entry point of your module tree. You pass it to `StratalWorker` via the `configure()` method:
+
+```typescript
+import 'reflect-metadata'
+import { StratalWorker } from 'stratal'
+import { AppModule } from './app.module'
+
+export default class Worker extends StratalWorker {
+  protected configure() {
+    return { module: AppModule }
+  }
+}
+```
+
+There is nothing structurally special about the root module. It is simply the module that `configure()` returns. Stratal walks its `imports` array recursively to discover and initialize every module in the application.
+
+## Feature modules
+
+As your application grows, you should split related functionality into **feature modules**. Each feature module encapsulates its own controllers and providers, then gets imported into the root module (or another feature module).
+
+```typescript
+import { Module } from 'stratal'
+import { UsersController } from './users.controller'
+import { UsersService } from './users.service'
+
+@Module({
+  controllers: [UsersController],
+  providers: [UsersService],
+})
+export class UsersModule {}
+```
+
+Import it into your root module:
+
+```typescript
+import { Module } from 'stratal'
+import { UsersModule } from './users/users.module'
+
+@Module({
+  imports: [UsersModule],
+})
+export class AppModule {}
+```
+
+<Aside type="tip">
+  A good rule of thumb is one feature module per resource or bounded context. For example, `UsersModule`, `OrdersModule`, and `NotificationsModule`.
+</Aside>
+
+## Dynamic modules
+
+Sometimes a module needs configuration before it can be used. Dynamic modules solve this by exposing static methods that return a `DynamicModule` object.
+
+### Synchronous configuration with withRoot()
+
+Use `withRoot()` when you have static configuration values available at import time:
+
+```typescript
+import { Module, DynamicModule } from 'stratal'
+
+@Module({})
+export class CacheModule {
+  static withRoot(options: { ttl: number }): DynamicModule {
+    return {
+      module: CacheModule,
+      providers: [
+        { provide: CACHE_OPTIONS, useValue: options },
+        CacheService,
+      ],
+    }
+  }
+}
+```
+
+Import it with configuration:
+
+```typescript
+@Module({
+  imports: [CacheModule.withRoot({ ttl: 3600 })],
+})
+export class AppModule {}
+```
+
+### Asynchronous configuration with withRootAsync()
+
+Use `withRootAsync()` when the configuration depends on other services that need to be resolved first:
+
+```typescript
+import { Module, DynamicModule, AsyncModuleOptions } from 'stratal'
+
+@Module({})
+export class DatabaseModule {
+  static withRootAsync<TOptions>(
+    options: AsyncModuleOptions<TOptions>,
+  ): DynamicModule {
+    return {
+      module: DatabaseModule,
+      providers: [
+        {
+          provide: DB_OPTIONS,
+          useFactory: options.useFactory,
+          inject: options.inject,
+        },
+        DatabaseService,
+      ],
+    }
+  }
+}
+```
+
+Import it with an async factory:
+
+```typescript
+@Module({
+  imports: [
+    DatabaseModule.withRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connectionString: config.get('DATABASE_URL'),
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+The `inject` array tells Stratal which dependencies to resolve and pass to `useFactory`.
+
+<Aside type="note">
+  The `DynamicModule` interface extends `ModuleOptions` (minus `imports`) and adds a required `module` property that references the module class. This reference is needed so Stratal can call lifecycle hooks on the module instance.
+</Aside>
+
+## Middleware configuration
+
+Modules can configure middleware by implementing the `MiddlewareConfigurable` interface. Define a `configure()` method that receives a `MiddlewareConsumer`:
+
+```typescript
+import { Module, MiddlewareConfigurable, MiddlewareConsumer } from 'stratal'
+import { LoggingMiddleware } from './logging.middleware'
+
+@Module({
+  controllers: [UsersController],
+})
+export class UsersModule implements MiddlewareConfigurable {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(LoggingMiddleware).forRoutes('/api/users/*')
+  }
+}
+```
+
+For a complete guide on writing and applying middleware, see the [Middleware guide](/guides/middleware/).
+
+## Next steps
+
+- [Controllers and Routing](/core-concepts/controllers-and-routing/) to learn how controllers handle requests inside a module.
+- [Dependency Injection](/core-concepts/dependency-injection/) to understand how providers are resolved.
+- [Providers](/core-concepts/providers/) for all the ways you can register services.
+- [Lifecycle Hooks](/core-concepts/lifecycle-hooks/) to run code when a module initializes or shuts down.
