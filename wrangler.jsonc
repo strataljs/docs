@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "main": "dist/_worker.js/index.js",
+  "name": "starlight-docs",
+  "compatibility_date": "2026-02-26",
+  "route": {
+    "custom_domain": true,
+    "pattern": "stratal.dev"
+  },
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "./dist"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
