@@ -3,11 +3,13 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 import cloudflare from '@astrojs/cloudflare';
+import starlightThemeNext from 'starlight-theme-next'
 
 // https://astro.build/config
 export default defineConfig({
     integrations: [
         starlight({
+            plugins: [starlightThemeNext()],
             favicon: '/favicon.ico',
             title: 'Stratal',
             description: 'Stratal is a type-safe, modular framework purpose-built for Cloudflare Workers. Build scalable edge applications with dependency injection, automatic OpenAPI docs, and first-class support for Workers primitives.',
@@ -93,4 +95,5 @@ export default defineConfig({
     ],
 
     adapter: cloudflare(),
+
 });

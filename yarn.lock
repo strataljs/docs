@@ -5598,8 +5598,18 @@ __metadata:
     "@astrojs/starlight": "npm:^0.37.6"
     astro: "npm:^5.6.1"
     sharp: "npm:^0.34.2"
+    starlight-theme-next: "npm:^0.3.3"
   languageName: unknown
   linkType: soft
+
+"starlight-theme-next@npm:^0.3.3":
+  version: 0.3.3
+  resolution: "starlight-theme-next@npm:0.3.3"
+  peerDependencies:
+    "@astrojs/starlight": ">=0.34"
+  checksum: 10c0/021d24f0293f0b0b8b376ef1b06fdb95d6d3b71f4e013a78603518e97057d42dce33142dedac72b4ac60cfcddb65e82bd59f0cf58969d2ce56296bfd540ebde6
+  languageName: node
+  linkType: hard
 
 "stoppable@npm:1.1.0":
   version: 1.1.0
