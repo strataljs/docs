@@ -1,0 +1,193 @@
+---
+title: Installation
+description: Get started with the create-stratal CLI or add Stratal to an existing project manually.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+## Prerequisites
+
+Before you begin, make sure you have the following:
+
+- **Node.js** v18 or later — [download](https://nodejs.org/)
+- **A Cloudflare account** — [sign up for free](https://dash.cloudflare.com/sign-up)
+
+## Quick start
+
+The fastest way to start a new Stratal project is with `create-stratal`:
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
+    ```bash
+    npm create stratal@latest my-app
+    ```
+  </TabItem>
+  <TabItem label="yarn">
+    ```bash
+    yarn create stratal my-app
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```bash
+    pnpm create stratal my-app
+    ```
+  </TabItem>
+</Tabs>
+
+The CLI will prompt you to pick a template and package manager, then scaffold the project and install all dependencies.
+
+To skip the interactive picker, pass the `--template` flag directly:
+
+```bash
+npm create stratal@latest my-app --template hello-world
+```
+
+The generated project (hello-world template) looks like this:
+
+```
+my-app/
+├── src/
+│   ├── app.module.ts
+│   ├── hello.controller.ts
+│   └── index.ts
+├── package.json
+├── tsconfig.json
+└── wrangler.jsonc
+```
+
+Start the dev server:
+
+```bash
+cd my-app
+npm run dev
+```
+
+Head to [Your First Worker](/getting-started/your-first-worker/) for a walkthrough of the generated code.
+
+## Add to an existing project
+
+If you already have a project and want to add Stratal to it, follow the steps below.
+
+### Install dependencies
+
+Install Stratal and its required peer dependency:
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
+    ```bash
+    npm install stratal reflect-metadata
+    ```
+  </TabItem>
+  <TabItem label="yarn">
+    ```bash
+    yarn add stratal reflect-metadata
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```bash
+    pnpm add stratal reflect-metadata
+    ```
+  </TabItem>
+</Tabs>
+
+Then install the dev dependencies:
+
+<Tabs syncKey="pkg">
+  <TabItem label="npm">
+    ```bash
+    npm install -D typescript wrangler @cloudflare/workers-types
+    ```
+  </TabItem>
+  <TabItem label="yarn">
+    ```bash
+    yarn add -D typescript wrangler @cloudflare/workers-types
+    ```
+  </TabItem>
+  <TabItem label="pnpm">
+    ```bash
+    pnpm add -D typescript wrangler @cloudflare/workers-types
+    ```
+  </TabItem>
+</Tabs>
+
+### TypeScript configuration
+
+Create a `tsconfig.json` in the project root. Stratal uses TypeScript decorators, so both `experimentalDecorators` and `emitDecoratorMetadata` must be enabled:
+
+```json
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "types": ["@cloudflare/workers-types/2023-07-01"]
+  },
+  "include": ["src/**/*"]
+}
+```
+
+### Wrangler configuration
+
+Create a `wrangler.jsonc` file to configure how Cloudflare deploys your worker:
+
+```jsonc
+{
+  "name": "my-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-02-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "ENVIRONMENT": "development"
+  },
+  "kv_namespaces": [
+    { "binding": "CACHE", "id": "<your-kv-namespace-id>" }
+  ]
+}
+```
+
+Key settings:
+
+- **`main`** — points to your worker entry file.
+- **`nodejs_compat`** — required so Stratal can use Node.js APIs (e.g. `reflect-metadata`).
+- **`ENVIRONMENT`** — a variable Stratal reads at runtime.
+- **`CACHE`** — a KV namespace binding used by Stratal's built-in caching layer. You can create one with `npx wrangler kv namespace create CACHE` and paste the returned `id` into the config.
+
+### Verify the setup
+
+Add a dev script to your `package.json`:
+
+```json
+{
+  "scripts": {
+    "dev": "wrangler dev"
+  }
+}
+```
+
+Create the source directory:
+
+```bash
+mkdir src
+```
+
+Your project should now look like this:
+
+```
+my-worker/
+├── src/
+├── package.json
+├── tsconfig.json
+└── wrangler.jsonc
+```
+
+Everything is in place. Head to [Your First Worker](/getting-started/your-first-worker/) to create the entry point and build your first route.
