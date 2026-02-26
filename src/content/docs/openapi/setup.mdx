@@ -1,0 +1,100 @@
+---
+title: Setup
+description: Configuring OpenAPIModule.forRoot() with info, paths, and security schemes.
+---
+
+import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+The `OpenAPIModule` is registered automatically as core infrastructure during application startup. Your API already has a JSON spec at `/api/openapi.json` and interactive docs at `/api/docs` with no setup required.
+
+To customize the spec metadata, endpoint paths, or security schemes, re-register the module with `forRoot()` in your root module.
+
+## Customizing the defaults
+
+To override the default options, import `OpenAPIModule` from `stratal` and call `forRoot()` in your root module's `imports` array:
+
+```typescript
+import { Module, OpenAPIModule } from 'stratal'
+import { UsersModule } from './users/users.module'
+
+@Module({
+  imports: [
+    OpenAPIModule.forRoot({
+      info: {
+        title: 'Users API',
+        version: '1.0.0',
+        description: 'A sample API demonstrating OpenAPI documentation with Stratal',
+      },
+    }),
+    UsersModule,
+  ],
+})
+export class AppModule {}
+```
+
+When you call `forRoot()`, your options replace the auto-registered defaults. Start your dev server and visit `/api/docs` to see the interactive documentation.
+
+<Aside type="tip">
+  The OpenAPI module is always registered as infrastructure before your routes are configured. You do not need to worry about import order, even when using `forRoot()`.
+</Aside>
+
+## Configuration options
+
+`forRoot()` accepts an `OpenAPIModuleOptions` object with these properties:
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `info.title` | `string` | `'API'` | Title shown in the spec and docs UI. |
+| `info.version` | `string` | `'1.0.0'` | API version string. |
+| `info.description` | `string` | `undefined` | Optional description for the API. |
+| `jsonPath` | `string` | `'/api/openapi.json'` | Path where the JSON spec is served. |
+| `docsPath` | `string` | `'/api/docs'` | Path where the Scalar UI is served. |
+| `securitySchemes` | `Record<string, object>` | `undefined` | Additional custom security scheme definitions. |
+
+## Default values
+
+These are the values used when the module is auto-registered (i.e., when you do not call `forRoot()`). They also apply if you call `forRoot()` with no arguments:
+
+```typescript
+OpenAPIModule.forRoot()
+// Equivalent to:
+OpenAPIModule.forRoot({
+  jsonPath: '/api/openapi.json',
+  docsPath: '/api/docs',
+  info: {
+    title: 'API',
+    version: '1.0.0',
+  },
+})
+```
+
+## Async configuration
+
+When your OpenAPI options depend on runtime values (environment variables, config services, etc.), use `forRootAsync()` with a factory function:
+
+```typescript
+import { Module, OpenAPIModule } from 'stratal'
+import { ConfigService, CONFIG_TOKENS } from './config'
+
+@Module({
+  imports: [
+    OpenAPIModule.forRootAsync({
+      useFactory: (config: ConfigService) => ({
+        info: {
+          title: config.get('API_TITLE'),
+          version: config.get('API_VERSION'),
+          description: config.get('API_DESCRIPTION'),
+        },
+      }),
+      inject: [CONFIG_TOKENS.ConfigService],
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+The `inject` array lists the DI tokens whose resolved values are passed as arguments to `useFactory`, in order.
+
+## Next steps
+
+With the module configured, head to [Route Conventions](/openapi/route-conventions/) to learn how controller method names map to HTTP verbs and paths in the generated spec.

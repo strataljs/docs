@@ -1,0 +1,42 @@
+---
+title: Overview
+description: What you get out of the box and why it matters.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal generates a complete OpenAPI 3.0 specification from the Zod schemas you already use for validation. One schema drives both runtime validation and your API documentation, so the two can never drift apart.
+
+## What you get
+
+Every `@Route`-decorated controller method is automatically included in a generated OpenAPI spec. The `OpenAPIModule` is registered as core infrastructure during application startup, so there is nothing to set up for basic usage.
+
+<Aside type="tip">
+  If your controllers already use `@Route` with Zod schemas, you have OpenAPI documentation. No additional annotations are required.
+</Aside>
+
+Out of the box, you get:
+
+- **Automatic OpenAPI 3.0 spec** generated from your Zod schemas and route decorators.
+- **Interactive API docs** served by [Scalar](https://scalar.com/) at `/api/docs`.
+- **JSON spec endpoint** at `/api/openapi.json` for importing into tools like Postman or Insomnia.
+- **Built-in security scheme definitions** for bearer tokens, API keys, and session cookies.
+- **Common error responses** (400, 401, 403, 404, 409, 500) auto-included on every route.
+- **Unreferenced schema pruning** so the spec only contains schemas your routes actually use.
+
+## How it works
+
+The flow from code to interactive docs looks like this:
+
+1. You define Zod schemas and attach them to controller methods via the `@Route` decorator.
+2. At startup, Stratal registers each route with [`@hono/zod-openapi`](https://github.com/honojs/middleware/tree/main/packages/zod-openapi), which builds the full OpenAPI document.
+3. When a request hits the JSON spec endpoint, Stratal filters out hidden routes, prunes unused schemas, and returns the final spec.
+4. The Scalar UI reads that spec and renders an interactive API reference.
+
+<Aside type="note">
+  The generated specification follows **OpenAPI 3.0.0**. Stratal uses Hono's OpenAPI integration under the hood, so any tooling that supports OpenAPI 3.0 will work with the generated spec.
+</Aside>
+
+## Next steps
+
+Head to [Setup](/openapi/setup/) to learn how to customize the OpenAPI spec metadata, paths, and security schemes.
