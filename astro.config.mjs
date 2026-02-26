@@ -4,12 +4,13 @@ import starlight from '@astrojs/starlight';
 
 import cloudflare from '@astrojs/cloudflare';
 import starlightThemeNext from 'starlight-theme-next'
+import starlightClientMermaid from '@pasqal-io/starlight-client-mermaid'
 
 // https://astro.build/config
 export default defineConfig({
     integrations: [
         starlight({
-            plugins: [starlightThemeNext()],
+            plugins: [starlightThemeNext(), starlightClientMermaid()],
             favicon: '/favicon.ico',
             title: 'Stratal',
             description: 'Stratal is a type-safe, modular framework purpose-built for Cloudflare Workers. Build scalable edge applications with dependency injection, automatic OpenAPI docs, and first-class support for Workers primitives.',

@@ -1,0 +1,285 @@
+---
+title: Middleware
+description: Learn how to create middleware for logging, timing, and request modification, and how to register it on specific routes using the MiddlewareConsumer.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Middleware runs before guards and route handlers. It can inspect or modify the request, short-circuit the response, or perform side effects like logging and timing. Stratal uses a per-module configuration approach where each module declares which middleware applies to which routes.
+
+## The Middleware interface
+
+A middleware class implements the `Middleware` interface with a single `handle` method:
+
+```typescript
+import { Middleware, RouterContext, Transient } from 'stratal'
+
+@Transient()
+export class LoggingMiddleware implements Middleware {
+  async handle(ctx: RouterContext, next: () => Promise<void>): Promise<void> {
+    const start = Date.now()
+    console.log(`--> ${ctx.c.req.method} ${ctx.c.req.path}`)
+
+    await next()
+
+    const duration = Date.now() - start
+    console.log(`<-- ${ctx.c.req.method} ${ctx.c.req.path} ${duration}ms`)
+  }
+}
+```
+
+Call `next()` to pass control to the next middleware in the chain (or the route handler if there are no more middlewares). Code before `next()` runs on the way in, and code after runs on the way out.
+
+<Aside type="note">
+  Middleware classes should use the `@Transient()` scope decorator. This ensures a fresh instance is created for each resolution, avoiding shared state between requests.
+</Aside>
+
+## Configuring middleware on a module
+
+Modules register middleware by implementing the `MiddlewareConfigurable` interface. This gives you a `configure` method with access to the `MiddlewareConsumer`:
+
+```typescript
+import { Module, MiddlewareConfigurable, MiddlewareConsumer } from 'stratal'
+import { LoggingMiddleware } from './logging.middleware'
+import { UsersController } from './users.controller'
+
+@Module({
+  controllers: [UsersController],
+  providers: [LoggingMiddleware],
+})
+export class UsersModule implements MiddlewareConfigurable {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(LoggingMiddleware)
+      .forRoutes('*')
+  }
+}
+```
+
+The `configure` method is called once during module initialization. It does not run on every request.
+
+## The MiddlewareConsumer API
+
+The consumer provides a fluent API for declaring middleware:
+
+### apply()
+
+Pass one or more middleware classes to `apply()`:
+
+```typescript
+consumer
+  .apply(CorsMiddleware, LoggingMiddleware)
+  .forRoutes('*')
+```
+
+Middlewares execute in the order they are listed. In this example, `CorsMiddleware` runs first, then `LoggingMiddleware`.
+
+### forRoutes()
+
+`forRoutes()` defines which routes the middleware applies to. It accepts three types of targets:
+
+**Global wildcard** applies to all routes:
+
+```typescript
+consumer
+  .apply(LoggingMiddleware)
+  .forRoutes('*')
+```
+
+**Controller class** applies to all routes in that controller:
+
+```typescript
+consumer
+  .apply(AuthMiddleware)
+  .forRoutes(UsersController, OrdersController)
+```
+
+**Route info** applies to a specific path and optionally a specific HTTP method:
+
+```typescript
+consumer
+  .apply(RateLimitMiddleware)
+  .forRoutes(
+    { path: '/api/auth/login', method: 'post' },
+    { path: '/api/auth/register', method: 'post' },
+  )
+```
+
+You can mix target types in a single call:
+
+```typescript
+consumer
+  .apply(AuditMiddleware)
+  .forRoutes(AdminController, { path: '/api/billing', method: 'post' })
+```
+
+### exclude()
+
+Use `exclude()` to skip specific routes. This is useful when you want middleware on most routes but need to carve out exceptions:
+
+```typescript
+consumer
+  .apply(AuthMiddleware)
+  .exclude('/api/health', '/api/auth/login')
+  .forRoutes('*')
+```
+
+Exclusions also accept route info objects for method-specific exclusions:
+
+```typescript
+consumer
+  .apply(AuthMiddleware)
+  .exclude(
+    { path: '/api/health', method: 'get' },
+    { path: '/api/auth/login', method: 'post' },
+  )
+  .forRoutes('*')
+```
+
+<Aside type="tip">
+  `exclude()` is chainable, so you can call it before `forRoutes()`. The order is always: `apply()` then optionally `exclude()` then `forRoutes()`.
+</Aside>
+
+## Multiple middleware configurations
+
+A single module can register multiple middleware chains. Call `consumer.apply()` multiple times:
+
+```typescript
+@Module({
+  controllers: [UsersController, HealthController],
+  providers: [LoggingMiddleware, AuthMiddleware, RateLimitMiddleware],
+})
+export class AppModule implements MiddlewareConfigurable {
+  configure(consumer: MiddlewareConsumer) {
+    // Global logging on every route except health
+    consumer
+      .apply(LoggingMiddleware)
+      .exclude('/api/health')
+      .forRoutes('*')
+
+    // Auth on the users controller
+    consumer
+      .apply(AuthMiddleware)
+      .forRoutes(UsersController)
+
+    // Rate limiting on login
+    consumer
+      .apply(RateLimitMiddleware)
+      .forRoutes({ path: '/api/auth/login', method: 'post' })
+  }
+}
+```
+
+## Dependency injection in middleware
+
+Middleware classes are resolved from the request-scoped DI container, so you can inject services:
+
+```typescript
+import { Middleware, RouterContext, Transient, inject } from 'stratal'
+import { LOGGER_TOKENS, type LoggerService } from 'stratal/logger'
+
+@Transient()
+export class RequestLoggerMiddleware implements Middleware {
+  constructor(
+    @inject(LOGGER_TOKENS.LoggerService) private readonly logger: LoggerService,
+  ) {}
+
+  async handle(ctx: RouterContext, next: () => Promise<void>): Promise<void> {
+    this.logger.info('Request received', {
+      method: ctx.c.req.method,
+      path: ctx.c.req.path,
+    })
+
+    await next()
+  }
+}
+```
+
+## Short-circuiting a response
+
+A middleware can respond directly without calling `next()`. This stops the chain and returns the response immediately:
+
+```typescript
+@Transient()
+export class MaintenanceMiddleware implements Middleware {
+  constructor(
+    @inject(DI_TOKENS.CloudflareEnv) private readonly env: StratalEnv,
+  ) {}
+
+  async handle(ctx: RouterContext, next: () => Promise<void>): Promise<void> {
+    if (this.env.MAINTENANCE_MODE === 'true') {
+      return ctx.json({ message: 'Service is under maintenance' }, 503)
+    }
+
+    await next()
+  }
+}
+```
+
+<Aside type="caution">
+  If you do not call `next()`, the route handler and any subsequent middleware will not execute. Make sure this is intentional.
+</Aside>
+
+## Route matching
+
+Stratal supports several path matching patterns in `forRoutes()` and `exclude()`:
+
+| Pattern              | Matches                                      |
+| -------------------- | -------------------------------------------- |
+| `*`                  | All routes                                   |
+| `/api/users`         | Exact match                                  |
+| `/api/*`             | Any path starting with `/api/`               |
+| `/api/users/:id`     | Path with parameter (e.g., `/api/users/123`) |
+
+When a `method` is specified in a route info object, the middleware only runs for that HTTP method. Without a method, the middleware runs for all methods on that path.
+
+## Execution order
+
+The complete request lifecycle shows where middleware fits:
+
+```
+Request
+  -> Request-scoped container setup
+  -> User-defined middleware (from configure())
+  -> Guards (controller-level, then method-level)
+  -> Schema validation (@Route body, params, query)
+  -> Route handler
+  -> Response
+```
+
+Within middleware, execution order is determined by:
+
+1. **Module order** — middleware from modules imported earlier runs before middleware from modules imported later.
+2. **Registration order** — within a single `configure()` call, middleware registered first runs first.
+3. **Chain order** — within a single `apply()` call, middleware listed first runs first.
+
+## Accessing the request container
+
+Every middleware has access to the request-scoped DI container through `RouterContext`:
+
+```typescript
+@Transient()
+export class TenantMiddleware implements Middleware {
+  async handle(ctx: RouterContext, next: () => Promise<void>): Promise<void> {
+    const tenantId = ctx.header('X-Tenant-ID')
+
+    if (!tenantId) {
+      return ctx.json({ message: 'Missing tenant header' }, 400)
+    }
+
+    // Register the tenant ID in the request container
+    const container = ctx.getContainer()
+    container.registerValue(TENANT_TOKEN, tenantId)
+
+    await next()
+  }
+}
+```
+
+Services resolved later in the request (guards, controllers, other middleware) can then inject `TENANT_TOKEN` to access the tenant ID.
+
+## Next steps
+
+- [Guards](/guides/guards/) to learn about access control that runs after middleware.
+- [Modules](/core-concepts/modules/) for how modules organize middleware and other providers.
+- [Dependency Injection](/core-concepts/dependency-injection/) for more on the request-scoped container.

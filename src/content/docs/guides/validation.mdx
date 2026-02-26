@@ -1,0 +1,390 @@
+---
+title: Validation
+description: Validate request bodies, query strings, and route params automatically with Zod schemas defined in the @Route decorator.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Stratal validates incoming requests automatically using [Zod](https://zod.dev) schemas. Define your schemas in the `@Route` decorator, and Stratal takes care of the rest: it validates the data before your handler runs, returns structured error responses when validation fails, and documents everything in the OpenAPI spec.
+
+## Defining schemas
+
+The `@Route` decorator accepts Zod schemas for three parts of a request: `body`, `params`, and `query`. Import `z` from `stratal/validation` to define your schemas.
+
+```typescript
+import { Controller, IController, Route, RouterContext } from 'stratal'
+import { z } from 'stratal/validation'
+
+const createUserSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  role: z.enum(['admin', 'member']).default('member'),
+})
+
+const userResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  role: z.string(),
+})
+
+@Controller('/api/users', { tags: ['Users'] })
+export class UsersController implements IController {
+  @Route({
+    body: createUserSchema,
+    response: userResponseSchema,
+    summary: 'Create a new user',
+  })
+  async create(ctx: RouterContext) {
+    const body = await ctx.body<{ name: string; email: string; role: string }>()
+    // body is guaranteed to match createUserSchema at this point
+    return ctx.json({ id: '1', ...body }, 201)
+  }
+}
+```
+
+When a request reaches the `create` handler, the body has already been validated against `createUserSchema`. If the body is missing required fields or has invalid values, Stratal returns a `400` response before the handler executes.
+
+## Request body validation
+
+Use the `body` property to validate JSON request bodies on `POST`, `PUT`, and `PATCH` routes:
+
+```typescript
+@Route({
+  body: z.object({
+    title: z.string().min(1).max(200),
+    content: z.string(),
+    published: z.boolean().default(false),
+  }),
+  response: postResponseSchema,
+})
+async create(ctx: RouterContext) {
+  const data = await ctx.body<{ title: string; content: string; published: boolean }>()
+  // data.title, data.content, data.published are all validated
+}
+```
+
+## Path parameter validation
+
+Use `params` to validate URL path parameters. This is especially useful for ensuring IDs are in the right format:
+
+```typescript
+@Route({
+  params: z.object({
+    id: z.string().uuid(),
+  }),
+  response: userResponseSchema,
+  summary: 'Get user by ID',
+})
+show(ctx: RouterContext) {
+  const id = ctx.param('id') // guaranteed to be a valid UUID
+}
+```
+
+If someone sends `GET /api/users/not-a-uuid`, they get a validation error before the handler runs.
+
+## Query parameter validation
+
+Use `query` to validate and coerce query string parameters:
+
+```typescript
+@Route({
+  query: z.object({
+    page: z.coerce.number().int().positive().default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(20),
+    search: z.string().optional(),
+  }),
+  response: userListResponseSchema,
+})
+index(ctx: RouterContext) {
+  const { page, limit, search } = ctx.query()
+  // page and limit are numbers (coerced from query strings)
+}
+```
+
+<Aside type="tip">
+  Query parameters arrive as strings. Use `z.coerce.number()` or `z.coerce.boolean()` to convert them to the right type during validation.
+</Aside>
+
+## Combining schemas
+
+You can validate body, params, and query on the same route:
+
+```typescript
+@Route({
+  params: z.object({ id: z.string().uuid() }),
+  query: z.object({ fields: z.string().optional() }),
+  body: z.object({
+    name: z.string().min(1),
+    email: z.string().email(),
+  }),
+  response: userResponseSchema,
+  summary: 'Update a user',
+})
+async update(ctx: RouterContext) {
+  const id = ctx.param('id')
+  const { fields } = ctx.query()
+  const data = await ctx.body<{ name: string; email: string }>()
+  // All three inputs are validated
+}
+```
+
+## Validation error responses
+
+When validation fails, Stratal returns a structured `400 Bad Request` response with details about every field that failed:
+
+```json
+{
+  "code": 1003,
+  "message": "Validation error",
+  "timestamp": "2026-02-26T12:00:00.000Z",
+  "metadata": {
+    "issues": [
+      {
+        "path": "email",
+        "message": "Invalid email address",
+        "code": "invalid_format"
+      },
+      {
+        "path": "name",
+        "message": "Required",
+        "code": "invalid_type"
+      }
+    ]
+  }
+}
+```
+
+Each issue in the `metadata.issues` array includes:
+
+| Field     | Description                              |
+| --------- | ---------------------------------------- |
+| `path`    | The field that failed (dot-notation for nested fields) |
+| `message` | A human-readable error message           |
+| `code`    | The Zod error code (`invalid_type`, `too_small`, `invalid_format`, etc.) |
+
+<Aside type="note">
+  In development, the response also includes a `stack` trace for debugging. This is automatically stripped in production.
+</Aside>
+
+## Common error schemas
+
+Stratal automatically adds common error response schemas to every route in the OpenAPI specification. You do not need to define these yourself:
+
+| Status | Description          |
+| ------ | -------------------- |
+| 400    | Validation error     |
+| 401    | Unauthorized         |
+| 403    | Forbidden            |
+| 404    | Not found            |
+| 409    | Conflict             |
+| 500    | Internal server error |
+
+Your `response` property in `@Route` defines the success response. Error responses are handled by the framework.
+
+## Reusable schemas
+
+Keep your schemas in separate files for reuse across controllers:
+
+```typescript
+// schemas/user.schema.ts
+import { z } from 'stratal/validation'
+
+export const createUserSchema = z.object({
+  name: z.string().min(1).max(100),
+  email: z.string().email(),
+  role: z.enum(['admin', 'member']).default('member'),
+})
+
+export const userResponseSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  email: z.string(),
+  role: z.string(),
+  createdAt: z.string().datetime(),
+})
+
+export const userListResponseSchema = z.object({
+  data: z.array(userResponseSchema),
+  total: z.number(),
+})
+
+// For type inference in your services
+export type CreateUserDto = z.infer<typeof createUserSchema>
+export type UserResponse = z.infer<typeof userResponseSchema>
+```
+
+Then import them in your controller:
+
+```typescript
+import { createUserSchema, userResponseSchema } from '../schemas/user.schema'
+
+@Controller('/api/users')
+export class UsersController implements IController {
+  @Route({
+    body: createUserSchema,
+    response: userResponseSchema,
+  })
+  async create(ctx: RouterContext) {
+    const data = await ctx.body<CreateUserDto>()
+    // ...
+  }
+}
+```
+
+<Aside type="tip">
+  Use `z.infer<typeof schema>` to derive TypeScript types from your Zod schemas. This keeps your validation and type definitions in sync.
+</Aside>
+
+## OpenAPI integration
+
+Every Zod schema you pass to `@Route` is automatically reflected in the generated OpenAPI specification. Stratal re-exports `z` from `@hono/zod-openapi`, which extends Zod with an `.openapi()` method for richer API documentation.
+
+### Field descriptions
+
+The simplest way to document fields is with `.describe()`, which maps directly to the `description` property in the OpenAPI spec:
+
+```typescript
+const createProductSchema = z.object({
+  name: z.string().min(1).max(200).describe('Product display name'),
+  price: z.number().positive().describe('Price in cents'),
+  category: z.enum(['electronics', 'clothing', 'food']).describe('Product category'),
+  tags: z.array(z.string()).max(10).optional().describe('Searchable tags'),
+})
+```
+
+### The `.openapi()` method
+
+For richer documentation, use `.openapi()` from `@hono/zod-openapi`. It accepts an object with `example`, `description`, `deprecated`, and other OpenAPI schema properties:
+
+```typescript
+import { z } from 'stratal/validation'
+
+const createProductSchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .max(200)
+    .openapi({ description: 'Product display name', example: 'Wireless Keyboard' }),
+  price: z
+    .number()
+    .positive()
+    .openapi({ description: 'Price in cents', example: 2999 }),
+  sku: z
+    .string()
+    .regex(/^[A-Z]{2}-\d{6}$/)
+    .openapi({ description: 'Stock keeping unit', example: 'KB-001234' }),
+  tags: z
+    .array(z.string())
+    .max(10)
+    .optional()
+    .openapi({ description: 'Searchable tags', example: ['electronics', 'peripherals'] }),
+})
+```
+
+The `example` values appear in the generated OpenAPI spec and are displayed in documentation tools like Scalar UI, making your API easier to explore.
+
+### Registering reusable schemas
+
+Pass a string to `.openapi()` to register a schema as a reusable `$ref` component in the OpenAPI specification:
+
+```typescript
+export const userSchema = z
+  .object({
+    id: z.string().uuid(),
+    name: z.string(),
+    email: z.string().email(),
+    role: z.enum(['admin', 'member', 'viewer']),
+    createdAt: z.string().datetime(),
+  })
+  .openapi('User')
+
+export const createUserSchema = z
+  .object({
+    name: z.string().min(1).max(100),
+    email: z.string().email(),
+    role: z.enum(['admin', 'member', 'viewer']).default('member'),
+  })
+  .openapi('CreateUser')
+```
+
+When you pass `'User'` to `.openapi()`, the schema is emitted once in the OpenAPI spec under `components.schemas.User` and referenced with `$ref: '#/components/schemas/User'` wherever it is used. This keeps the generated spec clean and avoids duplicating schema definitions across routes.
+
+### Path and query parameter metadata
+
+Use `.openapi()` with a `param` property to add OpenAPI parameter metadata to path or query parameters:
+
+```typescript
+const userParamsSchema = z.object({
+  id: z
+    .string()
+    .uuid()
+    .openapi({ param: { name: 'id', in: 'path' }, example: '550e8400-e29b-41d4-a716-446655440000' }),
+})
+
+const listQuerySchema = z.object({
+  page: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1)
+    .openapi({ param: { name: 'page', in: 'query' }, example: 1 }),
+  limit: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(100)
+    .default(20)
+    .openapi({ param: { name: 'limit', in: 'query' }, example: 20 }),
+})
+```
+
+<Aside type="tip">
+  Use `.describe()` for quick field descriptions. Use `.openapi()` when you need examples, parameter metadata, or want to register a schema as a reusable `$ref` component.
+</Aside>
+
+## i18n error messages
+
+When the [Internationalization](/integrations/i18n/) module is configured, validation error messages are automatically translated based on the request locale. Stratal includes built-in translations for all standard Zod error types.
+
+The locale is determined from the `X-Locale` request header. If no header is present, the default locale is used.
+
+```
+// Request with X-Locale: fr
+POST /api/users
+{ "email": "invalid" }
+
+// Response messages are in French
+{
+  "code": 1003,
+  "message": "Erreur de validation",
+  "metadata": {
+    "issues": [
+      { "path": "email", "message": "Adresse e-mail invalide", "code": "invalid_format" }
+    ]
+  }
+}
+```
+
+Built-in translations cover all standard Zod error codes including `required`, `invalid_type`, `too_small`, `too_big`, `invalid_format`, and more.
+
+## How validation works internally
+
+Understanding the validation pipeline can help when debugging:
+
+1. A request arrives and Stratal creates a request-scoped DI container with i18n context.
+2. The Zod schemas from `@Route` are passed to `@hono/zod-openapi`, which validates the request.
+3. If validation fails, a `SchemaValidationError` is created from the `ZodError`.
+4. The `GlobalErrorHandler` translates the error message using the request's locale.
+5. The error is serialized to the standard error response format and returned as a `400`.
+6. If validation passes, the handler runs with guaranteed-valid data.
+
+<Aside type="caution">
+  Validation runs before guards. If you need to authenticate a request before validating the body, use [middleware](/guides/middleware/) to handle authentication at an earlier stage.
+</Aside>
+
+## Next steps
+
+- [Error Handling](/guides/error-handling/) to learn about custom error types and the error code system.
+- [OpenAPI Schemas and Validation](/openapi/schemas-and-validation/) for more on how schemas generate API documentation.
+- [Controllers and Routing](/core-concepts/controllers-and-routing/) for the full `@Route` configuration options.
