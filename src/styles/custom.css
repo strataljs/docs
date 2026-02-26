@@ -1,0 +1,15 @@
+/* Dark mode (default) */
+:root {
+	--sl-color-accent-low: hsl(165, 50%, 13%);
+	--sl-color-accent: hsl(165, 82%, 42%);
+	--sl-color-accent-high: hsl(165, 70%, 78%);
+	--sl-hue-blue: 165;
+}
+
+/* Light mode */
+:root[data-theme='light'] {
+	--sl-color-accent-low: hsl(165, 80%, 90%);
+	--sl-color-accent: hsl(165, 90%, 30%);
+	--sl-color-accent-high: hsl(165, 80%, 20%);
+	--sl-hue-blue: 165;
+}

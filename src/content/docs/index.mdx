@@ -1,40 +1,42 @@
 ---
-title: Welcome to Starlight
-description: Get started building your docs site with Starlight.
-template: splash # Remove or comment out this line to display the site sidebar on this page.
+title: Stratal
+description: Stratal is a type-safe, modular framework purpose-built for Cloudflare Workers. Build scalable edge applications with dependency injection, automatic OpenAPI docs, and first-class support for Workers primitives.
+template: splash
 hero:
-  tagline: Congrats on setting up a new Starlight project!
+  tagline: A modular Cloudflare Workers framework with automatic OpenAPI documentation, dependency injection, queue consumers, cron jobs, and type-safe configuration.
   image:
-    file: ../../assets/houston.webp
+    file: ../../assets/logo.webp
   actions:
-    - text: Example Guide
-      link: /guides/example/
+    - text: Get Started
+      link: /getting-started/installation/
       icon: right-arrow
-    - text: Read the Starlight docs
-      link: https://starlight.astro.build
+    - text: View on GitHub
+      link: https://github.com/strataljs/stratal
       icon: external
       variant: minimal
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
-## Next steps
+## Why Stratal?
 
 <CardGrid stagger>
-	<Card title="Update content" icon="pencil">
-		Edit `src/content/docs/index.mdx` to see this page change.
+	<Card title="Automatic OpenAPI Docs" icon="open-book">
+		Generate OpenAPI specifications automatically from your route definitions and type annotations.
 	</Card>
-	<Card title="Change page layout" icon="document">
-		Delete `template: splash` in `src/content/docs/index.mdx` to display a
-		sidebar on this page.
+	<Card title="NestJS-style Modules" icon="puzzle">
+		Organize your application into cohesive, reusable modules with clear boundaries and encapsulation.
 	</Card>
-	<Card title="Add new content" icon="add-document">
-		Add Markdown or MDX files to `src/content/docs` to create new pages.
+	<Card title="Dependency Injection" icon="setting">
+		Built-in DI container for clean, testable architecture without manual wiring.
 	</Card>
-	<Card title="Configure your site" icon="setting">
-		Edit your `sidebar` and other config in `astro.config.mjs`.
+	<Card title="Convention-based REST" icon="rocket">
+		Define RESTful endpoints with decorators and conventions that reduce boilerplate.
 	</Card>
-	<Card title="Read the docs" icon="open-book">
-		Learn more in [the Starlight Docs](https://starlight.astro.build/).
+	<Card title="Queues, Cron & Storage" icon="cloudflare">
+		First-class support for Workers Queues, Cron Triggers, KV, R2, D1, and Durable Objects.
+	</Card>
+	<Card title="Guards, i18n & Email" icon="approve-check-circle">
+		Built-in middleware for authentication guards, internationalization, and email via MailChannels.
 	</Card>
 </CardGrid>
