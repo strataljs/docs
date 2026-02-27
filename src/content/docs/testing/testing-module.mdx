@@ -1,0 +1,298 @@
+---
+title: Testing Module
+description: Test.createTestingModule() and provider overrides.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`TestingModule` creates isolated application instances with a full DI container, router, and environment. It is the core building block for integration tests in Stratal.
+
+## Creating a testing module
+
+Use `Test.createTestingModule()` to configure and compile a test module:
+
+```typescript
+import { Test, type TestingModule } from '@stratal/testing'
+import { beforeEach, afterAll } from 'vitest'
+import { UsersModule } from '../users.module'
+
+let module: TestingModule
+
+beforeEach(async () => {
+  module = await Test.createTestingModule({
+    imports: [UsersModule],
+  }).compile()
+})
+
+afterAll(async () => {
+  await module.close()
+})
+```
+
+The `createTestingModule` method accepts a `TestingModuleConfig` object that extends `ModuleOptions`, so it supports the same properties you use in `@Module()` declarations:
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `imports` | `(ModuleClass \| DynamicModule)[]` | Modules to import (combined with base modules) |
+| `providers` | `Provider[]` | Additional providers to register |
+| `controllers` | `Constructor[]` | Controllers to register |
+| `consumers` | `Constructor[]` | Queue consumers to register |
+| `jobs` | `Constructor[]` | Cron jobs to register |
+| `env` | `Partial<StratalEnv>` | Environment variable overrides |
+| `logging` | `{ level?: LogLevel; formatter?: string }` | Logging config (defaults to `ERROR` level, `pretty` formatter) |
+
+## Provider overrides
+
+Use `.overrideProvider(token)` to replace a provider with a test double. The override builder supports four strategies:
+
+### useValue
+
+Replace a provider with a static value. This is the most common pattern for mocking services:
+
+```typescript
+import { createMock } from '@stratal/testing/mocks'
+import { EMAIL_TOKENS, type EmailService } from 'stratal/email'
+
+const mockEmailService = createMock<EmailService>()
+
+const module = await Test.createTestingModule({
+  imports: [RegistrationModule],
+})
+  .overrideProvider(EMAIL_TOKENS.EmailService)
+  .useValue(mockEmailService)
+  .compile()
+```
+
+### useClass
+
+Replace a provider with a different class. The class is registered as a singleton:
+
+```typescript
+class StubGeoService implements GeoService {
+  async lookup() {
+    return { country: 'US', city: 'San Francisco' }
+  }
+}
+
+const module = await Test.createTestingModule({
+  imports: [AppModule],
+})
+  .overrideProvider(GEO_TOKENS.GeoService)
+  .useClass(StubGeoService)
+  .compile()
+```
+
+### useFactory
+
+Replace a provider with a factory function that receives the DI container:
+
+```typescript
+const module = await Test.createTestingModule({
+  imports: [AppModule],
+})
+  .overrideProvider(CACHE_TOKENS.CacheService)
+  .useFactory((container) => {
+    const config = container.resolve(ConfigService)
+    return new InMemoryCacheService(config.get('cacheTtl'))
+  })
+  .compile()
+```
+
+### useExisting
+
+Alias one token to another. The overridden token resolves to the same instance as the target token:
+
+```typescript
+const module = await Test.createTestingModule({
+  imports: [AppModule],
+})
+  .overrideProvider(ABSTRACT_LOGGER_TOKEN)
+  .useExisting(ConcreteLoggerService)
+  .compile()
+```
+
+<Aside type="tip">
+  You can chain multiple overrides before calling `.compile()`. Each `.overrideProvider()` call returns the builder, so you can chain them fluently:
+  ```typescript
+  const module = await Test.createTestingModule({ imports: [AppModule] })
+    .overrideProvider(EMAIL_TOKENS.EmailService).useValue(mockEmail)
+    .overrideProvider(GEO_TOKENS.GeoService).useValue(mockGeo)
+    .compile()
+  ```
+</Aside>
+
+## Environment overrides
+
+Use `.withEnv()` to merge additional environment bindings into the test environment. This is useful for setting feature flags, API keys, or configuration values:
+
+```typescript
+const module = await Test.createTestingModule({
+  imports: [AppModule],
+})
+  .withEnv({
+    FEATURE_FLAG_NEW_UI: 'true',
+    API_BASE_URL: 'https://test.example.com',
+  })
+  .compile()
+```
+
+You can also pass `env` directly in the config object:
+
+```typescript
+const module = await Test.createTestingModule({
+  imports: [AppModule],
+  env: { FEATURE_FLAG_NEW_UI: 'true' },
+}).compile()
+```
+
+## The TestingModule instance
+
+After calling `.compile()`, you get a `TestingModule` with the following properties and methods:
+
+| Property / Method | Type | Description |
+| --- | --- | --- |
+| `get(token)` | `<T>(token: InjectionToken<T>) => T` | Resolve a service from the container |
+| `http` | `TestHttpClient` | HTTP test client for making requests |
+| `storage` | `FakeStorageService` | Fake storage service with assertion helpers |
+| `container` | `Container` | The DI container |
+| `application` | `Application` | The underlying Application instance |
+| `fetch(request)` | `(request: Request) => Promise<Response>` | Execute an HTTP request through the router |
+| `runInRequestScope(callback)` | `<T>(callback: () => T \| Promise<T>) => Promise<T>` | Run code inside a request scope |
+| `close()` | `() => Promise<void>` | Shut down the application (call in `afterAll`) |
+
+### Resolving services
+
+Use `module.get()` to resolve any service from the container by its injection token:
+
+```typescript
+import { NotesService } from '../notes.service'
+
+it('should resolve NotesService', () => {
+  const service = module.get(NotesService)
+  const notes = service.findAll()
+
+  expect(notes).toEqual([])
+})
+```
+
+### Request-scoped testing
+
+Use `runInRequestScope()` to execute code inside a request-scoped container. This is useful for testing services that depend on request-scoped providers:
+
+```typescript
+it('should access request-scoped services', async () => {
+  const result = await module.runInRequestScope(async () => {
+    const service = module.get(RequestScopedService)
+    return service.process()
+  })
+
+  expect(result).toBeDefined()
+})
+```
+
+<Aside type="note">
+  `runInRequestScope()` creates a mock router context internally, so services that depend on `RouterContext` will receive a minimal stub. For full HTTP testing, use `module.http` instead.
+</Aside>
+
+## Shared base modules
+
+Call `Test.setBaseModules()` once in your `vitest.setup.ts` to register modules that should be included in every test module:
+
+```typescript
+// vitest.setup.ts
+import 'reflect-metadata'
+import { Test } from '@stratal/testing'
+import { CoreModule } from './src/core/core.module'
+import { DatabaseModule } from './src/database/database.module'
+
+Test.setBaseModules([CoreModule, DatabaseModule])
+```
+
+Base modules are prepended to the `imports` array of every test module. This avoids duplicating shared configuration in every test file. In your tests, you only need to import the module under test:
+
+```typescript
+// Only imports NotesModule — CoreModule and DatabaseModule come from base modules
+const module = await Test.createTestingModule({
+  imports: [NotesModule],
+}).compile()
+```
+
+## Full integration test example
+
+Here is a complete integration test for a user registration flow with provider overrides, HTTP assertions, and mock verification:
+
+```typescript
+import { Test, type TestingModule } from '@stratal/testing'
+import { createMock, type DeepMocked } from '@stratal/testing/mocks'
+import { EMAIL_TOKENS, type EmailService } from 'stratal/email'
+import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { RegistrationModule } from '../registration.module'
+
+describe('RegistrationController', () => {
+  let module: TestingModule
+  let mockEmailService: DeepMocked<EmailService>
+
+  beforeEach(async () => {
+    mockEmailService = createMock<EmailService>()
+
+    module = await Test.createTestingModule({
+      imports: [RegistrationModule],
+    })
+      .overrideProvider(EMAIL_TOKENS.EmailService)
+      .useValue(mockEmailService)
+      .compile()
+  })
+
+  afterAll(async () => {
+    await module.close()
+  })
+
+  it('should register a new user and send welcome email', async () => {
+    const response = await module.http
+      .post('/api/v1/register')
+      .withBody({
+        name: 'Alice',
+        email: 'alice@example.com',
+        password: 'securepassword123',
+      })
+      .send()
+
+    response.assertCreated()
+    await response.assertJsonPath('data.name', 'Alice')
+    await response.assertJsonPath('data.email', 'alice@example.com')
+    await response.assertJsonPathMissing('data.password')
+
+    expect(mockEmailService.send).toHaveBeenCalledOnce()
+  })
+
+  it('should reject duplicate email', async () => {
+    // Register first user
+    await module.http
+      .post('/api/v1/register')
+      .withBody({
+        name: 'Alice',
+        email: 'alice@example.com',
+        password: 'securepassword123',
+      })
+      .send()
+
+    // Attempt duplicate
+    const response = await module.http
+      .post('/api/v1/register')
+      .withBody({
+        name: 'Bob',
+        email: 'alice@example.com',
+        password: 'anotherpassword456',
+      })
+      .send()
+
+    response.assertUnprocessable()
+  })
+})
+```
+
+## Next steps
+
+- [HTTP Testing](/testing/http-testing/) for the full request builder and response assertion API.
+- [Mocks and Fakes](/testing/mocks-and-fakes/) for deep mocks, fake storage, and fetch interception.
+- [Testing Overview](/testing/overview/) for installation and project setup.

@@ -1,0 +1,289 @@
+---
+title: HTTP Testing
+description: TestHttpClient, request building, and response assertions.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal provides three classes for HTTP testing: `TestHttpClient` for creating requests, `TestHttpRequest` for building request details, and `TestResponse` for asserting on the response. Together they give you a fluent, chainable API for integration testing your endpoints.
+
+## Making requests
+
+Access the HTTP client through `module.http` and call a method matching the HTTP verb you need:
+
+```typescript
+// Simple GET
+const response = await module.http.get('/api/notes').send()
+
+// POST with body
+const response = await module.http
+  .post('/api/notes')
+  .withBody({ title: 'My Note', content: 'Hello' })
+  .send()
+```
+
+### TestHttpClient methods
+
+| Method | Returns | Description |
+| --- | --- | --- |
+| `get(path)` | `TestHttpRequest` | Create a GET request |
+| `post(path)` | `TestHttpRequest` | Create a POST request |
+| `put(path)` | `TestHttpRequest` | Create a PUT request |
+| `patch(path)` | `TestHttpRequest` | Create a PATCH request |
+| `delete(path)` | `TestHttpRequest` | Create a DELETE request |
+| `forHost(host)` | `this` | Set the `Host` header for all subsequent requests |
+| `withHeaders(headers)` | `this` | Set default headers for all subsequent requests |
+
+### Setting a host
+
+Use `forHost()` to set the host for multi-tenant applications:
+
+```typescript
+const response = await module.http
+  .forHost('tenant-a.example.com')
+  .get('/api/settings')
+  .send()
+```
+
+<Aside type="note">
+  The host set with `forHost()` persists across requests on the same `TestHttpClient` instance. Since a new module is created in each `beforeEach`, the host is effectively scoped to each test.
+</Aside>
+
+## Building requests
+
+Each HTTP method returns a `TestHttpRequest` that lets you configure the request body, headers, and content type before sending:
+
+```typescript
+const response = await module.http
+  .post('/api/users')
+  .withBody({ name: 'Alice', role: 'admin' })
+  .withHeaders({ 'X-Request-ID': 'test-123' })
+  .send()
+```
+
+### TestHttpRequest methods
+
+| Method | Returns | Description |
+| --- | --- | --- |
+| `withBody(data)` | `this` | Set the request body (serialized as JSON) |
+| `withHeaders(headers)` | `this` | Add headers to the request |
+| `asJson()` | `this` | Explicitly set `Content-Type: application/json` |
+| `send()` | `Promise<TestResponse>` | Send the request and return the response |
+
+<Aside type="tip">
+  When a request has a body and no `Content-Type` header is set, `Content-Type: application/json` is applied automatically. You only need `asJson()` for bodyless requests that require the JSON content type.
+</Aside>
+
+## Response assertions
+
+`TestResponse` wraps the raw `Response` object with chainable assertion methods. Status assertions are synchronous, while JSON assertions are async (they parse the body on first access).
+
+### Status assertions
+
+| Method | Asserts |
+| --- | --- |
+| `assertOk()` | Status is `200` |
+| `assertCreated()` | Status is `201` |
+| `assertNoContent()` | Status is `204` |
+| `assertBadRequest()` | Status is `400` |
+| `assertUnauthorized()` | Status is `401` |
+| `assertForbidden()` | Status is `403` |
+| `assertNotFound()` | Status is `404` |
+| `assertUnprocessable()` | Status is `422` |
+| `assertServerError()` | Status is `500` |
+| `assertStatus(code)` | Status equals the given code |
+| `assertSuccessful()` | Status is in the `2xx` range |
+
+Status assertions are chainable and return `this`:
+
+```typescript
+response.assertOk().assertHeader('Content-Type', 'application/json')
+```
+
+### JSON assertions
+
+| Method | Asserts |
+| --- | --- |
+| `assertJson(expected)` | Response JSON contains the given key-value pairs |
+| `assertJsonPath(path, expected)` | Value at dot-notation path equals expected |
+| `assertJsonPaths(expectations)` | Multiple path-value pairs at once |
+| `assertJsonStructure(keys)` | Response JSON has the given top-level keys |
+| `assertJsonPathExists(path)` | Path exists (value can be anything, including `null`) |
+| `assertJsonPathMissing(path)` | Path does not exist |
+| `assertJsonPathMatches(path, matcher)` | Value at path passes the predicate function |
+| `assertJsonPathContains(path, substring)` | String value at path contains the substring |
+| `assertJsonPathIncludes(path, item)` | Array at path includes the item |
+| `assertJsonPathCount(path, count)` | Array at path has the given length |
+
+JSON assertions are async (they return `Promise<this>`) and must be awaited:
+
+```typescript
+// Single path
+await response.assertJsonPath('data.user.name', 'Alice')
+
+// Multiple paths at once
+await response.assertJsonPaths({
+  'data.user.name': 'Alice',
+  'data.user.role': 'admin',
+})
+
+// Verify structure
+await response.assertJsonStructure(['data', 'meta'])
+
+// Check existence
+await response.assertJsonPathExists('data.id')
+await response.assertJsonPathMissing('data.password')
+```
+
+<Aside type="tip">
+  JSON paths use dot-notation to traverse nested objects. For example, `data.user.address.city` navigates through `{ data: { user: { address: { city: "..." } } } }`.
+</Aside>
+
+### Header assertions
+
+| Method | Asserts |
+| --- | --- |
+| `assertHeader(name, expected?)` | Header is present (optionally with the given value) |
+| `assertHeaderMissing(name)` | Header is not present |
+
+```typescript
+response
+  .assertHeader('Content-Type', 'application/json')
+  .assertHeader('X-Request-ID')
+  .assertHeaderMissing('X-Debug')
+```
+
+### Raw response access
+
+You can also access the underlying response data directly for custom assertions:
+
+| Property / Method | Type | Description |
+| --- | --- | --- |
+| `status` | `number` | Response status code |
+| `headers` | `Headers` | Response headers |
+| `raw` | `Response` | The raw `Response` object |
+| `json()` | `Promise<T>` | Parse body as JSON |
+| `text()` | `Promise<string>` | Get body as text |
+
+```typescript
+const data = await response.json<{ data: { id: string } }>()
+expect(data.data.id).toMatch(/^[a-f0-9-]+$/)
+```
+
+## Full CRUD test example
+
+Here is a complete test suite for a notes API covering create, list, get by ID, update, delete, and 404 handling:
+
+```typescript
+import { Test, type TestingModule } from '@stratal/testing'
+import { afterAll, beforeEach, describe, it } from 'vitest'
+import { NotesModule } from '../notes.module'
+
+describe('Notes API', () => {
+  let module: TestingModule
+
+  beforeEach(async () => {
+    module = await Test.createTestingModule({
+      imports: [NotesModule],
+    }).compile()
+  })
+
+  afterAll(async () => {
+    await module.close()
+  })
+
+  it('should create a note', async () => {
+    const response = await module.http
+      .post('/api/notes')
+      .withBody({ title: 'Test Note', content: 'Hello world' })
+      .send()
+
+    response.assertCreated()
+    await response.assertJsonPath('data.title', 'Test Note')
+    await response.assertJsonPath('data.content', 'Hello world')
+    await response.assertJsonPathExists('data.id')
+  })
+
+  it('should list all notes', async () => {
+    // Create two notes
+    await module.http
+      .post('/api/notes')
+      .withBody({ title: 'Note 1', content: 'First' })
+      .send()
+    await module.http
+      .post('/api/notes')
+      .withBody({ title: 'Note 2', content: 'Second' })
+      .send()
+
+    const response = await module.http.get('/api/notes').send()
+
+    response.assertOk()
+    await response.assertJsonPathCount('data', 2)
+  })
+
+  it('should get a note by ID', async () => {
+    const createResponse = await module.http
+      .post('/api/notes')
+      .withBody({ title: 'My Note', content: 'Content' })
+      .send()
+
+    const { data } = await createResponse.json<{ data: { id: string } }>()
+
+    const response = await module.http.get(`/api/notes/${data.id}`).send()
+
+    response.assertOk()
+    await response.assertJsonPath('data.id', data.id)
+    await response.assertJsonPath('data.title', 'My Note')
+  })
+
+  it('should update a note', async () => {
+    const createResponse = await module.http
+      .post('/api/notes')
+      .withBody({ title: 'Original', content: 'Content' })
+      .send()
+
+    const { data } = await createResponse.json<{ data: { id: string } }>()
+
+    const response = await module.http
+      .patch(`/api/notes/${data.id}`)
+      .withBody({ title: 'Updated' })
+      .send()
+
+    response.assertOk()
+    await response.assertJsonPath('data.title', 'Updated')
+  })
+
+  it('should delete a note', async () => {
+    const createResponse = await module.http
+      .post('/api/notes')
+      .withBody({ title: 'To Delete', content: 'Gone soon' })
+      .send()
+
+    const { data } = await createResponse.json<{ data: { id: string } }>()
+
+    const deleteResponse = await module.http
+      .delete(`/api/notes/${data.id}`)
+      .send()
+
+    deleteResponse.assertNoContent()
+
+    // Verify it's gone
+    const getResponse = await module.http.get(`/api/notes/${data.id}`).send()
+    getResponse.assertNotFound()
+  })
+
+  it('should return 404 for non-existent note', async () => {
+    const response = await module.http
+      .get('/api/notes/non-existent-id')
+      .send()
+
+    response.assertNotFound()
+  })
+})
+```
+
+## Next steps
+
+- [Mocks and Fakes](/testing/mocks-and-fakes/) for deep mocks, fake storage, and fetch interception.
+- [Testing Module](/testing/testing-module/) for creating modules and provider overrides.
+- [Testing Overview](/testing/overview/) for installation and project setup.

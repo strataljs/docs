@@ -1,0 +1,423 @@
+---
+title: Mocks and Fakes
+description: FakeStorageService, FetchMock, and test environment helpers.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@stratal/testing` provides several tools for isolating your code from external dependencies: deep mocks with `createMock`, an in-memory `FakeStorageService`, fetch interception with `FetchMock`, and a nodemailer mock for email testing.
+
+## Deep mocks with createMock
+
+`createMock<T>()` generates a deeply mocked object where every method is replaced with a Vitest spy. It is re-exported from [`@golevelup/ts-vitest`](https://github.com/golevelup/ts-vitest) and available from `@stratal/testing/mocks`:
+
+```typescript
+import { createMock, type DeepMocked } from '@stratal/testing/mocks'
+import type { EmailService } from 'stratal/email'
+
+const mockEmailService = createMock<EmailService>()
+
+// Every method is a Vitest spy
+mockEmailService.send.mockResolvedValueOnce(undefined)
+
+// Verify calls
+expect(mockEmailService.send).toHaveBeenCalledOnce()
+```
+
+### Using mocks with provider overrides
+
+Combine `createMock` with `.overrideProvider()` to replace real services in your test module:
+
+```typescript
+import { Test, type TestingModule } from '@stratal/testing'
+import { createMock, type DeepMocked } from '@stratal/testing/mocks'
+import { EMAIL_TOKENS, type EmailService } from 'stratal/email'
+
+let module: TestingModule
+let mockEmailService: DeepMocked<EmailService>
+
+beforeEach(async () => {
+  mockEmailService = createMock<EmailService>()
+
+  module = await Test.createTestingModule({
+    imports: [AppModule],
+  })
+    .overrideProvider(EMAIL_TOKENS.EmailService)
+    .useValue(mockEmailService)
+    .compile()
+})
+```
+
+<Aside type="tip">
+  Use `DeepMocked<T>` as the type for your mock variable. This gives you full type safety on the original interface plus access to Vitest spy methods like `mockResolvedValueOnce` and `toHaveBeenCalledWith`.
+</Aside>
+
+## FakeStorageService
+
+Every test module automatically registers a `FakeStorageService` that replaces the real `StorageService`. It stores files in memory and provides assertion helpers for verifying upload and delete operations.
+
+### How it works
+
+`FakeStorageService` extends `StorageService` and uses an in-memory `Map` instead of S3. All storage operations (upload, download, delete, exists, presigned URLs) work without real cloud credentials. It is registered as a singleton in the test container so files uploaded during setup are available when consumers run.
+
+Access it through `module.storage`:
+
+```typescript
+module.storage.assertExists('uploads/avatar.png')
+module.storage.assertMissing('uploads/deleted-file.pdf')
+```
+
+### StoredFile interface
+
+Each file in the fake storage is represented by a `StoredFile` object:
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `content` | `Uint8Array` | File content as bytes |
+| `mimeType` | `string` | MIME type (e.g., `application/pdf`) |
+| `size` | `number` | File size in bytes |
+| `metadata` | `Record<string, string> \| undefined` | Optional custom metadata |
+| `uploadedAt` | `Date` | Timestamp when the file was stored |
+
+### Assertion helpers
+
+| Method | Asserts |
+| --- | --- |
+| `assertExists(path)` | A file exists at the given path |
+| `assertMissing(path)` | No file exists at the given path |
+| `assertEmpty()` | Storage contains no files |
+| `assertCount(count)` | Storage contains exactly `count` files |
+
+### Inspection methods
+
+| Method | Returns | Description |
+| --- | --- | --- |
+| `getStoredFiles()` | `Map<string, StoredFile>` | All stored files |
+| `getStoredPaths()` | `string[]` | All file paths |
+| `getFile(path)` | `StoredFile \| undefined` | A specific file by path |
+| `clear()` | `void` | Remove all files |
+
+Here is a complete example testing file upload and deletion:
+
+```typescript
+import { Test, type TestingModule } from '@stratal/testing'
+import { afterAll, beforeEach, describe, it } from 'vitest'
+import { DocumentsModule } from '../documents.module'
+
+describe('Document upload', () => {
+  let module: TestingModule
+
+  beforeEach(async () => {
+    module = await Test.createTestingModule({
+      imports: [DocumentsModule],
+    }).compile()
+
+    module.storage.clear()
+  })
+
+  afterAll(async () => {
+    await module.close()
+  })
+
+  it('should upload a document', async () => {
+    const response = await module.http
+      .post('/api/documents')
+      .withBody({ name: 'report.pdf', content: 'base64data...' })
+      .send()
+
+    response.assertCreated()
+    module.storage.assertCount(1)
+    module.storage.assertExists('documents/report.pdf')
+  })
+
+  it('should delete a document', async () => {
+    // Upload first
+    await module.http
+      .post('/api/documents')
+      .withBody({ name: 'temp.pdf', content: 'base64data...' })
+      .send()
+
+    module.storage.assertExists('documents/temp.pdf')
+
+    // Delete
+    await module.http.delete('/api/documents/temp.pdf').send()
+
+    module.storage.assertMissing('documents/temp.pdf')
+  })
+})
+```
+
+<Aside type="caution">
+  Call `module.storage.clear()` in `beforeEach` if you need clean storage for each test. Since the `FakeStorageService` is a singleton, files persist across tests within the same module instance.
+</Aside>
+
+## FetchMock
+
+`createFetchMock()` creates a wrapper around Cloudflare's built-in `fetchMock` (based on undici's `MockAgent`). Use it to intercept outgoing `fetch` calls in your tests without hitting real external APIs.
+
+```typescript
+import { createFetchMock } from '@stratal/testing'
+
+const mock = createFetchMock()
+```
+
+### Setup and teardown
+
+Activate the mock in `beforeEach` and reset it in `afterEach`:
+
+```typescript
+import { createFetchMock } from '@stratal/testing'
+import { afterEach, beforeEach } from 'vitest'
+
+const mock = createFetchMock()
+
+beforeEach(() => {
+  mock.activate()
+  mock.disableNetConnect()
+})
+
+afterEach(() => {
+  mock.reset()
+})
+```
+
+<Aside type="caution">
+  Calling `disableNetConnect()` ensures that any unmocked `fetch` call throws an error instead of hitting the network. This prevents accidental external requests in tests.
+</Aside>
+
+### Mocking JSON responses
+
+Use `mockJsonResponse()` to quickly set up a mock for a JSON API endpoint:
+
+```typescript
+it('should fetch user data from external API', async () => {
+  mock.mockJsonResponse('https://api.example.com/users/1', {
+    id: 1,
+    name: 'Alice',
+  })
+
+  const response = await module.http.get('/api/users/1/profile').send()
+
+  response.assertOk()
+  await response.assertJsonPath('data.name', 'Alice')
+  mock.assertNoPendingInterceptors()
+})
+```
+
+`mockJsonResponse` accepts an options object for customization:
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `status` | `number` | `200` | HTTP status code |
+| `headers` | `Record<string, string>` | `{}` | Additional response headers |
+| `delay` | `number` | — | Response delay in milliseconds |
+| `method` | `string` | `'GET'` | HTTP method to match |
+| `path` | `string` | — | Override the URL pathname |
+
+```typescript
+mock.mockJsonResponse(
+  'https://api.example.com/users',
+  { created: true },
+  { method: 'POST', status: 201 }
+)
+```
+
+### Mocking errors
+
+Use `mockError()` to simulate error responses from external APIs:
+
+```typescript
+it('should handle external API failure', async () => {
+  mock.mockError('https://api.example.com/users/1', 503, 'Service Unavailable')
+
+  const response = await module.http.get('/api/users/1/profile').send()
+
+  response.assertServerError()
+})
+```
+
+`mockError` accepts an options object:
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `headers` | `Record<string, string>` | `{}` | Additional response headers |
+| `method` | `string` | `'GET'` | HTTP method to match |
+| `path` | `string` | — | Override the URL pathname |
+
+### Advanced: direct interceptor API
+
+For more control, use the direct `get(origin).intercept().reply()` pattern from the underlying undici `MockPool`:
+
+```typescript
+mock
+  .get('https://api.example.com')
+  .intercept({ path: '/users', method: 'POST' })
+  .reply(201, JSON.stringify({ id: 1, created: true }))
+```
+
+This gives you access to advanced features like body matching:
+
+```typescript
+mock
+  .get('https://api.example.com')
+  .intercept({
+    path: '/users',
+    method: 'POST',
+    body: (body) => body.includes('alice'),
+  })
+  .reply(201, JSON.stringify({ id: 1 }))
+```
+
+### Asserting interceptors
+
+Call `assertNoPendingInterceptors()` at the end of a test to verify that all defined mocks were actually called:
+
+```typescript
+it('should call the payment API', async () => {
+  mock.mockJsonResponse('https://payments.example.com/charge', {
+    success: true,
+  }, { method: 'POST' })
+
+  await module.http
+    .post('/api/orders/123/pay')
+    .withBody({ amount: 9900 })
+    .send()
+
+  mock.assertNoPendingInterceptors()
+})
+```
+
+### FetchMock methods reference
+
+| Method | Description |
+| --- | --- |
+| `activate()` | Activate fetch mocking |
+| `deactivate()` | Deactivate fetch mocking |
+| `disableNetConnect()` | Block all unmocked network calls |
+| `enableNetConnect(host?)` | Allow network calls to a specific host or pattern |
+| `reset()` | Reset all mocks and deactivate |
+| `get(origin)` | Get a `MockPool` for the given origin |
+| `mockJsonResponse(url, data, options?)` | Mock a JSON response |
+| `mockError(url, status, message?, options?)` | Mock an error response |
+| `mockRequest(origin, options)` | Mock any HTTP request |
+| `assertNoPendingInterceptors()` | Assert all interceptors were called |
+
+## Nodemailer mock
+
+If your application uses the SMTP email provider, the test environment needs a mock for `nodemailer` to avoid real SMTP connections. Add an alias in your `vitest.config.ts`:
+
+```typescript
+import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config'
+
+export default defineWorkersConfig({
+  test: {
+    setupFiles: ['./vitest.setup.ts'],
+    alias: {
+      nodemailer: '@stratal/testing/mocks/nodemailer',
+    },
+    poolOptions: {
+      workers: {
+        wrangler: {
+          configPath: './wrangler.jsonc',
+        },
+      },
+    },
+  },
+})
+```
+
+<Aside type="note">
+  The nodemailer mock replaces `createTransport` with a no-op that resolves `sendMail` calls immediately. No emails are sent and no SMTP connection is made. This alias is only needed if your module tree includes the SMTP email provider.
+</Aside>
+
+## Environment helpers
+
+Use `getTestEnv()` for standalone tests that need a `StratalEnv` object without bootstrapping a full module:
+
+```typescript
+import { getTestEnv } from '@stratal/testing'
+
+it('should format config from env', () => {
+  const env = getTestEnv({ APP_NAME: 'test-app' })
+
+  expect(env.APP_NAME).toBe('test-app')
+})
+```
+
+`getTestEnv()` merges the `cloudflare:test` environment with your overrides, giving you a complete `StratalEnv` object.
+
+## Putting it all together
+
+Here is a combined example using provider overrides, fetch mocking, and storage assertions in a single test suite:
+
+```typescript
+import { Test, type TestingModule, createFetchMock } from '@stratal/testing'
+import { createMock, type DeepMocked } from '@stratal/testing/mocks'
+import { EMAIL_TOKENS, type EmailService } from 'stratal/email'
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { InvoiceModule } from '../invoice.module'
+
+describe('InvoiceController', () => {
+  let module: TestingModule
+  let mockEmailService: DeepMocked<EmailService>
+  const fetchMock = createFetchMock()
+
+  beforeEach(async () => {
+    mockEmailService = createMock<EmailService>()
+    fetchMock.activate()
+    fetchMock.disableNetConnect()
+
+    module = await Test.createTestingModule({
+      imports: [InvoiceModule],
+    })
+      .overrideProvider(EMAIL_TOKENS.EmailService)
+      .useValue(mockEmailService)
+      .compile()
+
+    module.storage.clear()
+  })
+
+  afterEach(() => {
+    fetchMock.reset()
+  })
+
+  afterAll(async () => {
+    await module.close()
+  })
+
+  it('should generate an invoice, store the PDF, and send email', async () => {
+    // Mock external tax API
+    fetchMock.mockJsonResponse('https://tax.example.com/calculate', {
+      tax: 1800,
+      total: 11800,
+    }, { method: 'POST' })
+
+    const response = await module.http
+      .post('/api/invoices')
+      .withBody({
+        customer: 'alice@example.com',
+        items: [{ name: 'Widget', price: 10000, quantity: 1 }],
+      })
+      .send()
+
+    response.assertCreated()
+    await response.assertJsonPath('data.total', 11800)
+
+    // Verify PDF was stored
+    module.storage.assertCount(1)
+
+    // Verify email was sent
+    expect(mockEmailService.send).toHaveBeenCalledOnce()
+
+    // Verify tax API was called
+    fetchMock.assertNoPendingInterceptors()
+  })
+})
+```
+
+## Next steps
+
+- [Testing Module](/testing/testing-module/) for creating modules and provider overrides.
+- [HTTP Testing](/testing/http-testing/) for the full request builder and response assertion API.
+- [Testing Overview](/testing/overview/) for installation and project setup.
+- [Storage](/integrations/storage/) for the production storage module configuration.

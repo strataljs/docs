@@ -1,0 +1,139 @@
+---
+title: Testing Overview
+description: The @stratal/testing package, setup, and a quick example.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@stratal/testing` provides first-class testing utilities built on [Vitest](https://vitest.dev/) and [`@cloudflare/vitest-pool-workers`](https://developers.cloudflare.com/workers/testing/vitest-integration/). It gives you module bootstrapping, an HTTP test client with fluent assertions, provider overrides, fake storage, and fetch mocking — all running on the real Workers runtime.
+
+## Why test on the Workers runtime
+
+Cloudflare Workers run on the `workerd` runtime, which differs from Node.js in several ways: no `fs` or `net` modules, a different `fetch` implementation, and environment bindings like KV, R2, D1, and Queues that only exist inside `workerd`. Testing on Node.js alone means your tests cannot exercise real bindings or catch runtime-specific issues.
+
+`@cloudflare/vitest-pool-workers` runs each test inside a local `workerd` instance, so your tests use the same runtime as production. `@stratal/testing` builds on this foundation to provide a higher-level API for bootstrapping modules, making HTTP requests, and asserting responses.
+
+## Install dependencies
+
+```bash
+yarn add -D @stratal/testing vitest @cloudflare/vitest-pool-workers @cloudflare/workers-types
+```
+
+## Project setup
+
+### Vitest configuration
+
+Create a `vitest.config.ts` at the root of your project using `defineWorkersConfig` from `@cloudflare/vitest-pool-workers`:
+
+```typescript
+import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config'
+
+export default defineWorkersConfig({
+  test: {
+    setupFiles: ['./vitest.setup.ts'],
+    poolOptions: {
+      workers: {
+        wrangler: {
+          configPath: './wrangler.jsonc',
+        },
+      },
+    },
+  },
+})
+```
+
+<Aside type="note">
+  The `wrangler.configPath` tells the pool worker to read bindings (KV, R2, D1, Queues, etc.) from your Wrangler config. Tests get the same bindings your Worker uses in production.
+</Aside>
+
+### Vitest setup file
+
+Create a `vitest.setup.ts` that imports `reflect-metadata` and configures shared base modules:
+
+```typescript
+import 'reflect-metadata'
+import { Test } from '@stratal/testing'
+import { CoreModule } from './src/core/core.module'
+
+Test.setBaseModules([CoreModule])
+```
+
+`Test.setBaseModules()` registers modules that should be included in every test module. This avoids repeating common imports like your `CoreModule` in every test file.
+
+<Aside type="tip">
+  Base modules are prepended to the `imports` array of every test module. Put shared configuration modules here — database connections, logging, queue setup, etc.
+</Aside>
+
+### Wrangler configuration
+
+Your project needs a `wrangler.jsonc` (or `wrangler.toml`) with the `nodejs_compat` compatibility flag enabled. This is required for `reflect-metadata` and other Node.js APIs used by the framework:
+
+```jsonc
+{
+  "name": "my-app",
+  "compatibility_date": "2024-12-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/index.ts"
+}
+```
+
+## Your first test
+
+With the setup in place, create a test file for a module. Here is a complete example testing a `NotesController`:
+
+```typescript
+import { Test, type TestingModule } from '@stratal/testing'
+import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { NotesModule } from '../notes.module'
+
+describe('NotesController', () => {
+  let module: TestingModule
+
+  beforeEach(async () => {
+    module = await Test.createTestingModule({
+      imports: [NotesModule],
+    }).compile()
+  })
+
+  afterAll(async () => {
+    await module.close()
+  })
+
+  it('should list notes', async () => {
+    const response = await module.http.get('/api/notes').send()
+
+    response.assertOk()
+    await response.assertJsonStructure(['data'])
+  })
+
+  it('should create a note', async () => {
+    const response = await module.http
+      .post('/api/notes')
+      .withBody({ title: 'Test Note', content: 'Hello from tests' })
+      .send()
+
+    response.assertCreated()
+    await response.assertJsonPath('data.title', 'Test Note')
+    await response.assertJsonPathExists('data.id')
+  })
+})
+```
+
+`Test.createTestingModule()` creates an isolated application instance with your module's controllers, providers, and routes. The `module.http` property provides a fluent HTTP client for making requests and asserting responses.
+
+## Test lifecycle
+
+| Hook | Purpose |
+| --- | --- |
+| `beforeEach` | Create a fresh `TestingModule` with `Test.createTestingModule().compile()` |
+| `afterAll` | Call `module.close()` to shut down the application and release resources |
+
+<Aside type="caution">
+  Always call `module.close()` in `afterAll`. Failing to do so can leave open handles and cause test hangs or resource leaks.
+</Aside>
+
+## Next steps
+
+- [Testing Module](/testing/testing-module/) for creating modules, provider overrides, and environment configuration.
+- [HTTP Testing](/testing/http-testing/) for the full request builder and response assertion API.
+- [Mocks and Fakes](/testing/mocks-and-fakes/) for deep mocks, fake storage, and fetch interception.
