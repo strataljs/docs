@@ -284,6 +284,66 @@ You do not need to register the `EmailConsumer` yourself. It is included automat
   The queue-based approach means email failures do not affect your API responses. Failed emails are retried automatically by Cloudflare Queues, and you can monitor failures through the consumer's error logging.
 </Aside>
 
+## Error handling
+
+The email module uses focused error classes that extend `ApplicationError`. Each error has a localized i18n message key.
+
+### Configuration errors
+
+| Error class | When thrown |
+| --- | --- |
+| `ResendApiKeyMissingError` | Resend API key is not configured |
+| `SmtpConfigurationMissingError` | SMTP configuration not provided |
+| `SmtpHostMissingError` | SMTP `host` is missing from `SmtpConfig` |
+| `EmailProviderNotSupportedError` | Unsupported provider value configured |
+
+### Runtime errors
+
+| Error class | When thrown |
+| --- | --- |
+| `EmailSmtpConnectionFailedError` | SMTP server connection failed |
+| `EmailResendApiFailedError` | Resend API returned an error |
+
+<Aside type="note">
+  Errors thrown during queue processing are caught by the `EmailConsumer` and logged automatically via the `LoggerService`. You do not need to wrap consumer logic in try/catch yourself.
+</Aside>
+
+## Retry logic
+
+Email dispatch uses Cloudflare Queues' built-in retry mechanism:
+
+- **Max retries:** 3 attempts with automatic exponential backoff.
+- **Dead letter queue:** Messages that fail all retries are routed to the configured DLQ for manual inspection.
+
+Configure these options in your `wrangler.jsonc` consumer entry. See the [Queues wrangler configuration](/integrations/queues/#1-configure-your-queue-binding) for the full example.
+
+## Testing
+
+### Local testing with Mailpit
+
+[Mailpit](https://mailpit.axllent.org/) provides a local SMTP server with a web UI for inspecting captured emails. Run Mailpit with Docker and configure your email module to use it:
+
+```bash
+# Start Mailpit
+docker run -d --name mailpit -p 8025:8025 -p 1025:1025 axllent/mailpit
+
+# Or via Docker Compose if you have it in your docker-compose.yml
+docker compose up -d
+```
+
+Then configure your email module to use Mailpit as the SMTP provider:
+
+```typescript
+EmailModule.forRoot({
+  provider: 'smtp',
+  smtp: { host: 'localhost', port: 1025 },
+  from: { name: 'App', email: 'noreply@example.com' },
+  queue: 'email-queue',
+})
+```
+
+Open [http://localhost:8025](http://localhost:8025) to view captured emails in the Mailpit web UI. All emails sent through your application will appear there instead of being delivered to real recipients.
+
 ## Next steps
 
 - [Queues](/integrations/queues/) for details on queue configuration and consumers.

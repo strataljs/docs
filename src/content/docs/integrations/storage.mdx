@@ -136,6 +136,15 @@ StorageModule.forRoot({
 
 When calling storage methods, you can specify a disk by name. If omitted, the `defaultStorageDisk` is used.
 
+### Available disks
+
+You can query the configured disk names at runtime:
+
+```typescript
+const disks = this.storage.getAvailableDisks()
+// ['documents', 'public-assets']
+```
+
 ## Upload files
 
 Inject `StorageService` and call `upload` with the file content, a relative path, and upload options:
@@ -286,6 +295,39 @@ The `root` path in a disk configuration supports template variables that are res
 
 For example, a root of `uploads/{year}/{month}` resolves to `uploads/2026/02`. This keeps files organized by date automatically without any manual path construction.
 
+## Error handling
+
+Storage operations throw specific error classes that extend `ApplicationError`. Each error includes contextual data (file path, disk name, etc.) and is automatically translated based on the request locale:
+
+| Error class | When thrown |
+| --- | --- |
+| `FileNotFoundError` | File does not exist |
+| `InvalidDiskError` | Specified disk not found in configuration |
+| `DiskNotConfiguredError` | Disk configuration is missing or incomplete |
+| `StorageProviderNotSupportedError` | Provider type is not implemented |
+| `PresignedUrlInvalidExpiryError` | Presigned URL expiry is outside the 1s–7d range |
+| `InvalidFileTypeError` | File type is not allowed |
+| `FileTooLargeError` | File exceeds the configured size limit |
+
+```typescript
+import {
+  FileNotFoundError,
+  InvalidDiskError,
+  PresignedUrlInvalidExpiryError,
+} from 'stratal/storage'
+
+try {
+  const file = await this.storage.download('docs/missing.pdf')
+} catch (error) {
+  if (error instanceof FileNotFoundError) {
+    // File does not exist — return 404
+  }
+  if (error instanceof InvalidDiskError) {
+    // Disk name is invalid — check configuration
+  }
+}
+```
+
 ## Using with Cloudflare R2
 
 Cloudflare R2 is S3-compatible, so it works with the storage module's `s3` provider. The key differences are:
@@ -311,6 +353,16 @@ Cloudflare R2 is S3-compatible, so it works with the storage module's `s3` provi
 <Aside type="tip">
   Store your R2 credentials as Cloudflare Worker secrets rather than hardcoding them. Access them through your `ConfigService` or environment bindings.
 </Aside>
+
+## Best practices
+
+- **Use path templates.** Leverage `{year}`, `{month}`, and `{date}` in your `root` configuration to organize files automatically.
+- **Minimize disk switching.** Design your disk layout so most operations use the default disk. Pass an explicit disk name only when you need a different bucket or visibility.
+- **Use presigned URLs for client uploads.** Generate presigned upload URLs instead of proxying file uploads through your API. This offloads bandwidth to the storage provider.
+- **Keep expiry times short.** Use the shortest practical presigned URL expiry. The default of 1 hour is reasonable for most use cases.
+- **Handle errors gracefully.** Always catch storage errors — a file might not exist, the disk might be misconfigured, or the network might be unreachable.
+- **Separate environments.** Use different buckets or disks for development, staging, and production to prevent accidental data overlap.
+- **Use independent credentials.** Each disk should have its own access credentials with the minimum required permissions.
 
 ## Next steps
 
