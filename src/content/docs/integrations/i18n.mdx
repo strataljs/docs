@@ -3,7 +3,7 @@ title: Internationalization
 description: Built-in i18n with automatic locale detection, type-safe translations, parameter interpolation, and Zod validation error translation.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Stratal includes a built-in internationalization (i18n) module that provides locale detection, type-safe translation keys, parameter interpolation, and automatic translation of validation errors. The module is loaded automatically as part of the framework core, so system messages like error responses are translated out of the box.
 
@@ -25,18 +25,19 @@ To add your own translations or support additional locales, call `I18nModule.wit
 ```typescript
 import { Module } from 'stratal'
 import { I18nModule } from 'stratal/i18n'
-import en from './i18n/en'
-import fr from './i18n/fr'
+import type { I18nModuleOptions } from 'stratal/i18n'
+import * as en from './messages/en'
+import * as fr from './messages/fr'
+
+const i18nConfig: I18nModuleOptions = {
+  defaultLocale: 'en',
+  fallbackLocale: 'en',
+  locales: ['en', 'fr'],
+  messages: { en, fr },
+}
 
 @Module({
-  imports: [
-    I18nModule.withRoot({
-      defaultLocale: 'en',
-      fallbackLocale: 'en',
-      locales: ['en', 'fr'],
-      messages: { en, fr },
-    }),
-  ],
+  imports: [I18nModule.withRoot(i18nConfig)],
 })
 export class AppModule {}
 ```
@@ -54,33 +55,35 @@ export class AppModule {}
 
 Messages are nested objects. Each key path becomes a dot-notation translation key:
 
+<Tabs>
+  <TabItem label="messages/en.ts">
 ```typescript
-// i18n/en.ts
-export default {
-  common: {
-    welcome: 'Welcome',
-    greeting: 'Hello, {name}!',
-  },
-  users: {
-    created: 'User {email} has been created.',
-    deleted: 'User account deleted successfully.',
-  },
+export const common = {
+  welcome: 'Welcome',
+  greeting: 'Hello, {name}!',
 }
-```
 
-```typescript
-// i18n/fr.ts
-export default {
-  common: {
-    welcome: 'Bienvenue',
-    greeting: 'Bonjour, {name} !',
-  },
-  users: {
-    created: "L'utilisateur {email} a été créé.",
-    deleted: 'Compte utilisateur supprimé avec succès.',
-  },
+export const users = {
+  created: 'User {email} has been created.',
+  deleted: 'User account deleted successfully.',
 }
 ```
+</TabItem>
+
+<TabItem label="messages/fr.ts">
+```typescript
+export const common = {
+  welcome: 'Bienvenue',
+  greeting: 'Bonjour, {name} !',
+}
+
+export const users = {
+  created: "L'utilisateur {email} a été créé.",
+  deleted: 'Compte utilisateur supprimé avec succès.',
+}
+```
+</TabItem>
+</Tabs>
 
 Your application messages are deep-merged with the built-in system messages. If you define a key that already exists in the system messages, your value takes precedence.
 
@@ -127,6 +130,22 @@ Use `{paramName}` placeholders in your messages. Pass the values as the second a
 i18n.t('common.notifications', { name: 'Alice', count: 5 })
 // Result: 'Hello, Alice! You have 5 notifications.'
 ```
+
+### In error classes
+
+Error classes use message keys that `GlobalErrorHandler` translates at response time:
+
+```typescript
+import { ApplicationError, ERROR_CODES } from 'stratal'
+
+export class UserNotFoundError extends ApplicationError {
+  constructor(userId: string) {
+    super('errors.auth.userNotFound', ERROR_CODES.USERS.NOT_FOUND, { userId })
+  }
+}
+```
+
+See the [Error Handling](/guides/error-handling/) guide for more details.
 
 ## Locale detection
 
@@ -177,12 +196,11 @@ The translation covers all standard Zod error codes including `required`, `inval
 Use the `withI18n` helper to attach translatable messages to custom Zod validations:
 
 ```typescript
-import { z } from 'stratal/validation'
-import { withI18n } from 'stratal/i18n'
+import { z, withI18n } from 'stratal/validation'
 
 const schema = z.object({
-  password: z.string().min(8, withI18n('validation.passwordStrength')),
-  domain: z.string().min(1, withI18n('zodI18n.errors.custom.domainRequired')),
+  email: z.string().email(withI18n('validation.email')),
+  name: z.string().min(2, withI18n('validation.minLength', { min: 2 })),
 })
 ```
 
@@ -205,24 +223,40 @@ To override any system message, define the same key in your application messages
 
 ## Type-safe message keys
 
-When you augment the `AppMessages` interface, the `MessageKeys` type automatically includes your custom keys alongside the system keys:
+The module uses TypeScript module augmentation to provide autocomplete for message keys. The `AppMessages` interface in `stratal` is empty by default — augment it with the shape of your app's messages for a single locale:
 
 ```typescript
-// In your type declarations
+import type * as appEn from './messages/en'
+
 declare module 'stratal' {
-  interface AppMessages {
-    common: {
-      welcome: string
-      greeting: string
-    }
-    users: {
-      created: string
-    }
-  }
+  interface AppMessages extends typeof appEn {}
 }
 ```
 
-This gives you autocomplete and compile-time checks for `i18n.t()` calls throughout your application.
+<Aside type="note">
+  `AppMessages` should extend `typeof yourLocaleMessages` (the shape of a single locale's message object), not the `Messages` type exported from `stratal/i18n`. The `Messages` type represents the full `{ en: { ... } }` object containing all locales.
+</Aside>
+
+This gives you autocomplete and compile-time checks for both system and app message keys:
+
+```typescript
+this.i18n.t('errors.routeNotFound', { method: 'GET', path: '/api' }) // system key
+this.i18n.t('users.welcome', { name: 'Alice' })                      // app key
+```
+
+## DI tokens
+
+All tokens are exported from `stratal/i18n` via `I18N_TOKENS`:
+
+| Token | Service | Scope |
+| --- | --- | --- |
+| `I18N_TOKENS.MessageLoader` | `MessageLoaderService` | Singleton |
+| `I18N_TOKENS.I18nService` | `I18nService` | Request |
+| `I18N_TOKENS.Options` | `I18nModuleOptions` | Value |
+
+<Aside type="tip">
+  The module uses JIT compilation via `@intlify/core-base`, which generates AST instead of JavaScript code. This avoids CSP violations (`eval`/`new Function`) in Cloudflare Workers. No manual setup is required.
+</Aside>
 
 ## Next steps
 
