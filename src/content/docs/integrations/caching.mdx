@@ -1,0 +1,295 @@
+---
+title: Caching
+description: Type-safe KV caching with the CacheModule, multiple data types, TTL, metadata, pagination, and multiple namespaces.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal provides a `CacheModule` that wraps [Cloudflare Workers KV](https://developers.cloudflare.com/kv/) with a type-safe API for get, put, delete, and list operations. It supports multiple data types, TTL-based expiration, key metadata, cursor pagination, and multiple KV namespaces.
+
+## Setup
+
+### 1. Configure your KV binding
+
+Add a KV namespace binding to your `wrangler.jsonc`:
+
+```jsonc
+{
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "your-kv-namespace-id",
+      "preview_id": "your-kv-preview-id"
+    }
+  ]
+}
+```
+
+The `CACHE` binding is expected by default. It is declared in the `StratalEnv` interface so it is available throughout your application.
+
+### 2. Import the CacheModule
+
+The `CacheModule` is auto-registered as a core module, so you do not need to import it manually. The `CacheService` is available for injection right away:
+
+```typescript
+import { Transient, inject } from 'stratal'
+import { CACHE_TOKENS, type CacheService } from 'stratal/cache'
+
+@Transient()
+export class SessionService {
+  constructor(
+    @inject(CACHE_TOKENS.CacheService) private readonly cache: CacheService,
+  ) {}
+
+  async getSession(sessionId: string) {
+    return this.cache.get<{ userId: string }>(`session:${sessionId}`, 'json')
+  }
+}
+```
+
+## Basic operations
+
+### Get
+
+Retrieve a value by key. Returns `null` if the key does not exist:
+
+```typescript
+const value = await cache.get('my-key')
+```
+
+### Put
+
+Store a value under a key:
+
+```typescript
+await cache.put('my-key', 'hello world')
+```
+
+### Delete
+
+Remove a key from the cache. Safe to call even if the key does not exist:
+
+```typescript
+await cache.delete('my-key')
+```
+
+### List
+
+List all keys in the namespace, optionally filtered by prefix:
+
+```typescript
+const result = await cache.list({ prefix: 'session:' })
+for (const key of result.keys) {
+  console.log(key.name)
+}
+```
+
+## Data types
+
+The `get` method supports four return types. Pass the type as the second argument:
+
+| Type | Call | Return type | Use case |
+| --- | --- | --- | --- |
+| `text` | `get(key)` or `get(key, 'text')` | `string \| null` | Plain text, HTML, XML |
+| `json` | `get<T>(key, 'json')` | `T \| null` | Structured data with full type safety |
+| `arrayBuffer` | `get(key, 'arrayBuffer')` | `ArrayBuffer \| null` | Binary data, images |
+| `stream` | `get(key, 'stream')` | `ReadableStream \| null` | Large files, streaming responses |
+
+```typescript
+// Text (default)
+const html = await cache.get('page:home')
+
+// JSON with type inference
+interface UserProfile {
+  id: string
+  name: string
+  email: string
+}
+const profile = await cache.get<UserProfile>('user:123', 'json')
+
+// ArrayBuffer
+const image = await cache.get('image:logo', 'arrayBuffer')
+
+// Stream
+const file = await cache.get('file:report', 'stream')
+```
+
+## TTL and expiration
+
+Control how long a cached value lives using either a relative TTL or an absolute expiration timestamp:
+
+```typescript
+// Expire in 1 hour (TTL in seconds)
+await cache.put('key', 'value', { expirationTtl: 3600 })
+
+// Expire at a specific Unix timestamp (seconds)
+const tomorrow = Math.floor(Date.now() / 1000) + 86400
+await cache.put('key', 'value', { expiration: tomorrow })
+```
+
+If neither option is set, the value persists indefinitely.
+
+<Aside type="tip">
+  `expirationTtl` is relative (seconds from now). `expiration` is absolute (Unix timestamp in seconds). Use whichever is more convenient for your use case.
+</Aside>
+
+## Metadata
+
+You can attach arbitrary JSON metadata to any cached value. Metadata is stored alongside the value and can be retrieved without reading the value itself.
+
+### Store with metadata
+
+```typescript
+await cache.put('session:abc', JSON.stringify(sessionData), {
+  expirationTtl: 3600,
+  metadata: { userId: 'user_123', createdAt: Date.now() },
+})
+```
+
+### Retrieve with metadata
+
+Use `getWithMetadata` to get both the value and its metadata:
+
+```typescript
+interface SessionMeta {
+  userId: string
+  createdAt: number
+}
+
+const result = await cache.getWithMetadata<string, SessionMeta>(
+  'session:abc',
+  'text',
+)
+
+if (result.value) {
+  console.log('User:', result.metadata?.userId)
+  console.log('TTL remaining:', result.cacheStatus?.ttl)
+}
+```
+
+The `getWithMetadata` method supports the same data type overloads as `get` (text, json, arrayBuffer, stream).
+
+## Listing keys
+
+The `list` method returns keys with optional metadata and supports cursor-based pagination:
+
+```typescript
+const result = await cache.list({
+  prefix: 'user:',
+  limit: 100,
+})
+
+for (const key of result.keys) {
+  console.log(key.name, key.expiration, key.metadata)
+}
+```
+
+### Pagination
+
+When there are more keys than the limit, `list_complete` is `false` and a `cursor` is provided for the next page:
+
+```typescript
+let cursor: string | undefined
+const allKeys: string[] = []
+
+do {
+  const result = await cache.list({ prefix: 'log:', limit: 100, cursor })
+  allKeys.push(...result.keys.map(k => k.name))
+  cursor = result.list_complete ? undefined : result.cursor
+} while (cursor)
+```
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `prefix` | `string?` | Filter keys that start with this string |
+| `limit` | `number?` | Maximum keys per response (default 1000) |
+| `cursor` | `string?` | Pagination cursor from a previous response |
+
+## Multiple KV namespaces
+
+By default, `CacheService` uses the `CACHE` binding. To work with additional KV namespaces, use the `withBinding` method:
+
+```typescript
+import { Transient, inject, DI_TOKENS } from 'stratal'
+import { CACHE_TOKENS, type CacheService } from 'stratal/cache'
+
+@Transient()
+export class MultiCacheService {
+  private readonly sessionsCache: CacheService
+  private readonly configCache: CacheService
+
+  constructor(
+    @inject(CACHE_TOKENS.CacheService) private readonly cache: CacheService,
+    @inject(DI_TOKENS.CloudflareEnv) private readonly env: Env,
+  ) {
+    this.sessionsCache = cache.withBinding(this.env.SESSIONS_KV)
+    this.configCache = cache.withBinding(this.env.CONFIG_KV)
+  }
+
+  async getSessionData(id: string) {
+    return this.sessionsCache.get<{ userId: string }>(`session:${id}`, 'json')
+  }
+
+  async getConfig(key: string) {
+    return this.configCache.get(key)
+  }
+}
+```
+
+Add the additional KV bindings to your `wrangler.jsonc`:
+
+```jsonc
+{
+  "kv_namespaces": [
+    { "binding": "CACHE", "id": "main-kv-id" },
+    { "binding": "SESSIONS_KV", "id": "sessions-kv-id" },
+    { "binding": "CONFIG_KV", "id": "config-kv-id" }
+  ]
+}
+```
+
+And declare them in your environment types:
+
+```typescript
+declare module 'stratal' {
+  interface StratalEnv {
+    SESSIONS_KV: KVNamespace
+    CONFIG_KV: KVNamespace
+  }
+}
+```
+
+<Aside type="note">
+  `withBinding` returns a new `CacheService` instance. Store it as a class property rather than calling `withBinding` on every operation.
+</Aside>
+
+## Error handling
+
+Cache operations throw specific error types when they fail. The raw error is logged internally, and the thrown error contains only the key name to avoid leaking sensitive data:
+
+| Error class | Thrown by | Description |
+| --- | --- | --- |
+| `CacheGetError` | `get`, `getWithMetadata` | Failed to read from KV |
+| `CachePutError` | `put` | Failed to write to KV |
+| `CacheDeleteError` | `delete` | Failed to delete from KV |
+| `CacheListError` | `list` | Failed to list keys |
+
+```typescript
+import { CacheGetError } from 'stratal/cache'
+
+try {
+  const value = await cache.get('key')
+} catch (error) {
+  if (error instanceof CacheGetError) {
+    // Handle cache read failure
+  }
+}
+```
+
+All cache errors extend `ApplicationError` and use the `INFRASTRUCTURE_ERROR` error code, so they are logged automatically by the global error handler.
+
+## Next steps
+
+- [Environment Typing](/guides/environment-typing/) to learn how to declare custom bindings on `StratalEnv`.
+- [Dependency Injection](/core-concepts/dependency-injection/) for injecting `CacheService` into your providers.
+- [Storage](/integrations/storage/) for file storage with S3-compatible providers.

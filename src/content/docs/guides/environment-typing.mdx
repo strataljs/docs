@@ -41,13 +41,15 @@ This reads your Wrangler configuration file and generates an interface with all 
 
 ```typescript
 // worker-configuration.d.ts (auto-generated)
-interface Env {
-  ENVIRONMENT: string
-  JWT_SECRET: string
-  CACHE: KVNamespace
-  DATABASE: D1Database
-  STORAGE_BUCKET: R2Bucket
-  NOTIFICATIONS_QUEUE: Queue
+declare namespace Cloudflare {
+  interface Env {
+    ENVIRONMENT: string
+    JWT_SECRET: string
+    CACHE: KVNamespace
+    DATABASE: D1Database
+    STORAGE_BUCKET: R2Bucket
+    NOTIFICATIONS_QUEUE: Queue
+  }
 }
 ```
 
@@ -57,14 +59,14 @@ interface Env {
 
 ### Step 2: Extend StratalEnv from the generated types
 
-Use module augmentation to make `StratalEnv` extend the generated `Env` interface:
+Use module augmentation to make `StratalEnv` extend the generated `Cloudflare.Env` interface:
 
 ```typescript
 // src/types/env.ts
 export {}
 
 declare module 'stratal' {
-  interface StratalEnv extends Env {}
+  interface StratalEnv extends Cloudflare.Env {}
 }
 ```
 
@@ -97,7 +99,7 @@ If you have bindings that are not defined in your Wrangler configuration (for ex
 export {}
 
 declare module 'stratal' {
-  interface StratalEnv extends Env {
+  interface StratalEnv extends Cloudflare.Env {
     // Bindings not in wrangler.toml
     DEPLOY_SHA: string
     FEATURE_FLAGS: KVNamespace
@@ -182,33 +184,31 @@ When using queues, you need to augment the `QueueNames` interface so the queue s
 // src/types/queues.ts
 export {}
 
-/** Extract only the queue binding keys (those ending in _QUEUE) from StratalEnv */
+/** Extract only the queue binding keys from Cloudflare.Env */
 type QueueBindingKeys = {
-  [K in keyof StratalEnv]: K extends `${string}_QUEUE` ? K : never
-}[keyof StratalEnv]
+  [K in keyof Cloudflare.Env]: Cloudflare.Env[K] extends Queue ? K : never
+}[keyof Cloudflare.Env]
 
-/** Convert a binding name like NOTIFICATIONS_QUEUE to kebab-case queue name like notifications */
+/** Convert a binding name like NOTIFICATIONS_QUEUE to kebab-case: notifications-queue */
 type BindingToQueueName<T extends string> =
-  T extends `${infer Name}_QUEUE`
-    ? Lowercase<Name> extends `${infer A}_${infer B}`
-      ? `${Lowercase<A>}-${Lowercase<B>}`
-      : Lowercase<Name>
-    : never
+  T extends `${infer Part}_${infer Rest}`
+    ? `${Lowercase<Part>}-${BindingToQueueName<Rest>}`
+    : Lowercase<T>
 
-/** Derive all queue names from StratalEnv bindings */
-type DerivedQueueNames = BindingToQueueName<QueueBindingKeys & string>
+/** Derive all queue names from Cloudflare.Env bindings */
+type DerivedQueueNames = BindingToQueueName<QueueBindingKeys>
 
 declare module 'stratal' {
   interface QueueNames extends Record<DerivedQueueNames, true> {}
 }
 ```
 
-This derives queue names from your `StratalEnv` bindings automatically. A binding named `NOTIFICATIONS_QUEUE` produces the queue name `notifications`. A binding named `ORDER_EVENTS_QUEUE` produces `order-events`.
+This derives queue names from your `Cloudflare.Env` bindings automatically. A binding named `NOTIFICATIONS_QUEUE` produces the queue name `notifications-queue`. A binding named `ORDER_EVENTS_QUEUE` produces `order-events-queue`.
 
-The queue provider performs the reverse conversion at runtime: it takes a queue name like `order-events`, converts it to `ORDER_EVENTS_QUEUE` via `.toUpperCase().replace(/-/g, '_')`, and looks up the binding in the environment.
+The queue provider performs the reverse conversion at runtime: it takes a queue name like `notifications-queue`, converts it to `NOTIFICATIONS_QUEUE` via `.toUpperCase().replace(/-/g, '_')`, and looks up the binding in the environment.
 
 <Aside type="tip">
-  By deriving queue names from `StratalEnv`, you only need to maintain bindings in one place. When you add a new queue binding to your Wrangler config and re-run `npx wrangler types`, the queue name is automatically available.
+  By deriving queue names from `Cloudflare.Env`, you only need to maintain bindings in one place. When you add a new queue binding to your Wrangler config and re-run `npx wrangler types`, the queue name is automatically available.
 </Aside>
 
 ## Matching your Wrangler config
@@ -271,13 +271,15 @@ queue = "notifications"
   <TabItem label="npx wrangler types">
 ```typescript
 // worker-configuration.d.ts (auto-generated)
-interface Env {
-  ENVIRONMENT: string
-  JWT_SECRET: string
-  CACHE: KVNamespace
-  DATABASE: D1Database
-  STORAGE_BUCKET: R2Bucket
-  NOTIFICATIONS_QUEUE: Queue
+declare namespace Cloudflare {
+  interface Env {
+    ENVIRONMENT: string
+    JWT_SECRET: string
+    CACHE: KVNamespace
+    DATABASE: D1Database
+    STORAGE_BUCKET: R2Bucket
+    NOTIFICATIONS_QUEUE: Queue
+  }
 }
 ```
   </TabItem>
@@ -286,13 +288,13 @@ interface Env {
 export {}
 
 declare module 'stratal' {
-  interface StratalEnv extends Env {}
+  interface StratalEnv extends Cloudflare.Env {}
 }
 ```
   </TabItem>
 </Tabs>
 
-When you add or remove a binding in your Wrangler configuration, re-run `npx wrangler types` to regenerate the `Env` interface. Your `StratalEnv` declaration picks up the changes automatically.
+When you add or remove a binding in your Wrangler configuration, re-run `npx wrangler types` to regenerate the `Cloudflare.Env` interface. Your `StratalEnv` declaration picks up the changes automatically.
 
 ## Organizing type declarations
 

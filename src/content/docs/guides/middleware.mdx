@@ -259,24 +259,20 @@ Every middleware has access to the request-scoped DI container through `RouterCo
 
 ```typescript
 @Transient()
-export class TenantMiddleware implements Middleware {
+export class CorrelationMiddleware implements Middleware {
   async handle(ctx: RouterContext, next: () => Promise<void>): Promise<void> {
-    const tenantId = ctx.header('X-Tenant-ID')
+    const requestId = ctx.header('X-Request-ID') ?? crypto.randomUUID()
 
-    if (!tenantId) {
-      return ctx.json({ message: 'Missing tenant header' }, 400)
-    }
-
-    // Register the tenant ID in the request container
+    // Register the request ID in the request container
     const container = ctx.getContainer()
-    container.registerValue(TENANT_TOKEN, tenantId)
+    container.registerValue(REQUEST_ID_TOKEN, requestId)
 
     await next()
   }
 }
 ```
 
-Services resolved later in the request (guards, controllers, other middleware) can then inject `TENANT_TOKEN` to access the tenant ID.
+Services resolved later in the request (guards, controllers, other middleware) can then inject `REQUEST_ID_TOKEN` to access the correlation ID.
 
 ## Next steps
 

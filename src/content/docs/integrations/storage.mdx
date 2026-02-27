@@ -1,0 +1,319 @@
+---
+title: Storage
+description: Upload, download, and manage files with S3-compatible providers using the StorageModule, disk configuration, and presigned URLs.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Stratal provides a `StorageModule` for file operations with S3-compatible storage providers. It supports multiple disk configurations, chunked uploads, presigned URLs, and path template variables. It works with any S3-compatible service, including Cloudflare R2, AWS S3, and MinIO.
+
+## Install dependencies
+
+The storage module uses the AWS SDK v3 for S3 operations. Install the required packages:
+
+```bash
+yarn add @aws-sdk/client-s3 @aws-sdk/lib-storage @aws-sdk/s3-request-presigner
+```
+
+## Configuration
+
+Register the `StorageModule` in your root module using `forRoot` or `forRootAsync`:
+
+<Tabs>
+  <TabItem label="Static">
+```typescript
+import { Module } from 'stratal'
+import { StorageModule } from 'stratal/storage'
+
+@Module({
+  imports: [
+    StorageModule.forRoot({
+      storage: [
+        {
+          disk: 'uploads',
+          provider: 's3',
+          endpoint: 'https://your-account-id.r2.cloudflarestorage.com',
+          bucket: 'my-bucket',
+          region: 'auto',
+          accessKeyId: 'your-access-key',
+          secretAccessKey: 'your-secret-key',
+          root: 'uploads/{year}/{month}',
+          visibility: 'private',
+        },
+      ],
+      defaultStorageDisk: 'uploads',
+      presignedUrl: {
+        defaultExpiry: 3600,
+        maxExpiry: 604800,
+      },
+    }),
+  ],
+})
+export class AppModule {}
+```
+  </TabItem>
+  <TabItem label="Async">
+```typescript
+import { Module } from 'stratal'
+import { StorageModule } from 'stratal/storage'
+
+@Module({
+  imports: [
+    StorageModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        storage: config.get('storage'),
+        defaultStorageDisk: config.get('defaultStorageDisk'),
+        presignedUrl: config.get('presignedUrl'),
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+  </TabItem>
+</Tabs>
+
+### StorageConfig
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `storage` | `StorageEntry[]` | Array of disk configurations |
+| `defaultStorageDisk` | `string` | Disk name used when no disk is specified |
+| `presignedUrl.defaultExpiry` | `number` | Default presigned URL expiry in seconds |
+| `presignedUrl.maxExpiry` | `number` | Maximum allowed expiry (up to 604800 for 7 days) |
+
+### StorageEntry
+
+Each entry in the `storage` array configures a disk:
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `disk` | `string` | Unique disk identifier |
+| `provider` | `'s3'` | Storage provider (S3-compatible) |
+| `endpoint` | `string` | S3 endpoint URL |
+| `bucket` | `string` | Bucket name |
+| `region` | `string` | AWS region or `'auto'` for R2 |
+| `accessKeyId` | `string` | Access key credential |
+| `secretAccessKey` | `string` | Secret key credential |
+| `root` | `string` | Root path prefix (supports template variables) |
+| `visibility` | `'public' \| 'private'` | Default object visibility |
+
+## Disk configuration
+
+You can define multiple disks for different storage needs:
+
+```typescript
+StorageModule.forRoot({
+  storage: [
+    {
+      disk: 'documents',
+      provider: 's3',
+      endpoint: 'https://account.r2.cloudflarestorage.com',
+      bucket: 'docs-bucket',
+      region: 'auto',
+      accessKeyId: '...',
+      secretAccessKey: '...',
+      root: 'documents/{year}',
+      visibility: 'private',
+    },
+    {
+      disk: 'public-assets',
+      provider: 's3',
+      endpoint: 'https://account.r2.cloudflarestorage.com',
+      bucket: 'assets-bucket',
+      region: 'auto',
+      accessKeyId: '...',
+      secretAccessKey: '...',
+      root: 'assets',
+      visibility: 'public',
+    },
+  ],
+  defaultStorageDisk: 'documents',
+  presignedUrl: { defaultExpiry: 3600, maxExpiry: 604800 },
+})
+```
+
+When calling storage methods, you can specify a disk by name. If omitted, the `defaultStorageDisk` is used.
+
+## Upload files
+
+Inject `StorageService` and call `upload` with the file content, a relative path, and upload options:
+
+```typescript
+import { Transient, inject } from 'stratal'
+import { STORAGE_TOKENS, type StorageService } from 'stratal/storage'
+
+@Transient()
+export class DocumentService {
+  constructor(
+    @inject(STORAGE_TOKENS.StorageService) private readonly storage: StorageService,
+  ) {}
+
+  async uploadDocument(content: ArrayBuffer, filename: string) {
+    const result = await this.storage.upload(content, `docs/${filename}`, {
+      size: content.byteLength,
+      mimeType: 'application/pdf',
+      metadata: { uploadedBy: 'system' },
+    })
+
+    return result
+    // { path, disk, fullPath, size, mimeType, uploadedAt }
+  }
+}
+```
+
+The `upload` method returns an `UploadResult`:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `path` | `string` | Relative path within the disk |
+| `disk` | `string` | Disk name used |
+| `fullPath` | `string` | Full path including bucket |
+| `size` | `number` | File size in bytes |
+| `mimeType` | `string` | MIME type |
+| `uploadedAt` | `Date` | Upload timestamp |
+
+### Upload options
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `size` | `number` | Yes | Content size in bytes |
+| `mimeType` | `string` | No | MIME type |
+| `metadata` | `Record<string, string>` | No | Custom S3 object metadata |
+| `tagging` | `string` | No | S3 tagging for lifecycle policies |
+
+### Chunked uploads
+
+For large files or streams where the content length is unknown, use `chunkedUpload`:
+
+```typescript
+const result = await this.storage.chunkedUpload(stream, 'videos/clip.mp4', {
+  mimeType: 'video/mp4',
+})
+```
+
+Chunked upload uses S3 multipart upload under the hood. It automatically handles retries and cleans up partial uploads on failure. The `size` option is optional for chunked uploads.
+
+## Download files
+
+```typescript
+const file = await this.storage.download('docs/report.pdf')
+
+// Access the file as a stream
+const stream = file.toStream()
+
+// Or convert to a string
+const text = await file.toString()
+
+// Or convert to bytes
+const bytes = await file.toArrayBuffer()
+
+// Metadata is also available
+console.log(file.contentType, file.size, file.metadata)
+```
+
+The `download` method returns a `DownloadResult` with the following properties:
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `toStream()` | `ReadableStream \| undefined` | File content as a web stream |
+| `toString()` | `Promise<string> \| undefined` | File content as a string |
+| `toArrayBuffer()` | `Promise<Uint8Array> \| undefined` | File content as bytes |
+| `contentType` | `string` | MIME type |
+| `size` | `number` | File size in bytes |
+| `metadata` | `Record<string, string>?` | S3 object metadata |
+
+## Delete files
+
+```typescript
+await this.storage.delete('docs/report.pdf')
+```
+
+Delete is idempotent. No error is thrown if the file does not exist.
+
+## Check existence
+
+```typescript
+const exists = await this.storage.exists('docs/report.pdf')
+```
+
+Uses an S3 `HeadObject` request, so it does not download the file content.
+
+## Presigned URLs
+
+Generate temporary URLs that grant time-limited access to private files:
+
+```typescript
+// Download URL (GET)
+const download = await this.storage.getPresignedDownloadUrl('docs/report.pdf', 3600)
+
+// Upload URL (PUT)
+const upload = await this.storage.getPresignedUploadUrl('docs/new-report.pdf', 3600)
+
+// Delete URL (DELETE)
+const del = await this.storage.getPresignedDeleteUrl('docs/old-report.pdf', 3600)
+```
+
+Each method returns a `PresignedUrlResult`:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `url` | `string` | The presigned URL |
+| `expiresIn` | `number` | Expiry duration in seconds |
+| `expiresAt` | `Date` | Expiration timestamp |
+| `method` | `'GET' \| 'PUT' \| 'DELETE'` | HTTP method the URL is valid for |
+
+### Expiry validation
+
+The `expiresIn` parameter is validated against the configured limits:
+
+- Minimum: 1 second
+- Maximum: the `presignedUrl.maxExpiry` value from your config (up to 604800 seconds / 7 days)
+- If omitted, `presignedUrl.defaultExpiry` is used
+
+A `PresignedUrlInvalidExpiryError` is thrown if the value falls outside the allowed range.
+
+## Path template variables
+
+The `root` path in a disk configuration supports template variables that are resolved at runtime:
+
+| Variable | Resolved to | Example |
+| --- | --- | --- |
+| `{date}` | Current date in `YYYY-MM-DD` format | `2026-02-26` |
+| `{year}` | Current year | `2026` |
+| `{month}` | Current month, zero-padded | `02` |
+
+For example, a root of `uploads/{year}/{month}` resolves to `uploads/2026/02`. This keeps files organized by date automatically without any manual path construction.
+
+## Using with Cloudflare R2
+
+Cloudflare R2 is S3-compatible, so it works with the storage module's `s3` provider. The key differences are:
+
+- Set `region` to `'auto'`
+- Use your R2 endpoint: `https://<account-id>.r2.cloudflarestorage.com`
+- Generate R2 API tokens in the Cloudflare dashboard for `accessKeyId` and `secretAccessKey`
+
+```typescript
+{
+  disk: 'r2',
+  provider: 's3',
+  endpoint: 'https://your-account-id.r2.cloudflarestorage.com',
+  bucket: 'my-r2-bucket',
+  region: 'auto',
+  accessKeyId: env.R2_ACCESS_KEY_ID,
+  secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+  root: 'uploads/{year}/{month}',
+  visibility: 'private',
+}
+```
+
+<Aside type="tip">
+  Store your R2 credentials as Cloudflare Worker secrets rather than hardcoding them. Access them through your `ConfigService` or environment bindings.
+</Aside>
+
+## Next steps
+
+- [Email](/integrations/email/) to learn how email attachments can reference files in storage.
+- [Environment Typing](/guides/environment-typing/) for declaring custom environment bindings.
+- [Dependency Injection](/core-concepts/dependency-injection/) for injecting `StorageService` into your providers.

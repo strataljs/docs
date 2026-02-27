@@ -88,10 +88,10 @@ Controller-level guards always run first, followed by method-level guards. In th
 Guards run sequentially in the order they are listed. If any guard returns `false`, execution stops immediately and the remaining guards are skipped.
 
 ```typescript
-@UseGuards(AuthGuard, RateLimitGuard, TenantGuard)
+@UseGuards(AuthGuard, RateLimitGuard, PermissionGuard)
 export class SecureController implements IController {
-  // Execution: AuthGuard -> RateLimitGuard -> TenantGuard -> handler
-  // If AuthGuard returns false, RateLimitGuard and TenantGuard never run
+  // Execution: AuthGuard -> RateLimitGuard -> PermissionGuard -> handler
+  // If AuthGuard returns false, RateLimitGuard and PermissionGuard never run
 }
 ```
 
@@ -277,12 +277,12 @@ You can stack as many guards as you need. They all must pass for the request to 
 
 ```typescript
 @Controller('/api/billing')
-@UseGuards(AuthGuard, TenantGuard, RateLimitGuard)
+@UseGuards(AuthGuard, ScopeGuard, RateLimitGuard)
 export class BillingController implements IController {
   @UseGuards(PermissionGuard('billing:write'))
   @Route({ body: chargeSchema, response: chargeResponseSchema })
   async create(ctx: RouterContext) {
-    // Must pass: AuthGuard, TenantGuard, RateLimitGuard, PermissionGuard
+    // Must pass: AuthGuard, ScopeGuard, RateLimitGuard, PermissionGuard
   }
 }
 ```

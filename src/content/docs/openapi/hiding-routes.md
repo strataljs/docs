@@ -79,7 +79,7 @@ Route-level `hideFromDocs` takes precedence over the controller-level setting. I
 
 ## Runtime filtering
 
-For more dynamic control, use the `OpenAPIConfigService` to apply a custom route filter at runtime. This is useful when you want to filter routes based on request context, such as environment or tenant.
+For more dynamic control, use the `OpenAPIConfigService` to apply a custom route filter at runtime. This is useful when you want to filter routes based on request context, such as environment or user role.
 
 Inject the config service in a middleware and call `override()` with a `routeFilter` function:
 

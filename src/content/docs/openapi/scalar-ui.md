@@ -43,7 +43,7 @@ With this configuration:
 
 ## Runtime overrides
 
-The `OpenAPIConfigService` is request-scoped, which means you can change the docs title or apply route filters on a per-request basis. This is useful for multi-tenant scenarios where different tenants should see different API documentation.
+The `OpenAPIConfigService` is request-scoped, which means you can change the docs title or apply route filters on a per-request basis. This is useful when you want to customize the documentation per environment or API version.
 
 Here is a middleware that overrides the spec title based on a request header:
 
@@ -53,23 +53,21 @@ import { Middleware, MiddlewareHandler, RouterContext, OPENAPI_TOKENS } from 'st
 import type { IOpenAPIConfigService } from 'stratal'
 
 @Middleware()
-export class TenantDocsMiddleware implements MiddlewareHandler {
+export class EnvironmentDocsMiddleware implements MiddlewareHandler {
   constructor(
     @inject(OPENAPI_TOKENS.ConfigService)
     private openApiConfig: IOpenAPIConfigService,
   ) {}
 
   async handle(ctx: RouterContext, next: () => Promise<void>) {
-    const tenant = ctx.header('X-Tenant-ID')
+    const environment = ctx.header('X-Environment') ?? 'production'
 
-    if (tenant) {
-      this.openApiConfig.override({
-        info: {
-          title: `${tenant} API`,
-          description: `API documentation for ${tenant}`,
-        },
-      })
-    }
+    this.openApiConfig.override({
+      info: {
+        title: `My API (${environment})`,
+        description: `API documentation for the ${environment} environment`,
+      },
+    })
 
     await next()
   }

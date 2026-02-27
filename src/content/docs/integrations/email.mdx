@@ -1,0 +1,291 @@
+---
+title: Email
+description: Send transactional emails asynchronously with Resend or SMTP, React Email templates, batch sending, and queue-based dispatch.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Stratal provides an `EmailModule` for sending transactional emails asynchronously through a queue. It supports multiple providers (Resend and SMTP), React Email templates, batch sending, and both inline and storage-based attachments. Emails are dispatched to a queue and processed by a built-in consumer, keeping your request handlers fast.
+
+## Install dependencies
+
+Install the provider package for your email service:
+
+<Tabs>
+  <TabItem label="SMTP">
+```bash
+yarn add nodemailer
+```
+  </TabItem>
+  <TabItem label="Resend">
+```bash
+yarn add resend
+```
+  </TabItem>
+</Tabs>
+
+If you want to use React Email templates, also install:
+
+```bash
+yarn add @react-email/render react
+```
+
+## Configuration
+
+The `EmailModule` requires the `QueueModule` to be configured first, since emails are dispatched through a queue. Register the queue, then configure the email module:
+
+```typescript
+import { Module, DI_TOKENS, type StratalEnv } from 'stratal'
+import { QueueModule } from 'stratal/queue'
+import { EmailModule } from 'stratal/email'
+
+@Module({
+  imports: [
+    QueueModule.forRootAsync({
+      inject: [DI_TOKENS.CloudflareEnv],
+      useFactory: (env: StratalEnv) => ({
+        provider: env.ENVIRONMENT === 'test' ? 'sync' : 'cloudflare',
+      }),
+    }),
+    QueueModule.registerQueue('email-queue'),
+    EmailModule.forRootAsync({
+      inject: [DI_TOKENS.CloudflareEnv],
+      useFactory: (env: StratalEnv) => ({
+        provider: 'resend',
+        apiKey: env.RESEND_API_KEY,
+        from: { name: 'My App', email: 'noreply@example.com' },
+        queue: 'email-queue',
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+### EmailModuleOptions
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `provider` | `'resend' \| 'smtp'` | Yes | Email provider to use |
+| `from` | `{ name: string; email: string }` | Yes | Default sender address |
+| `queue` | `QueueName` | Yes | Queue name for email dispatch (must be registered with `QueueModule.registerQueue`) |
+| `apiKey` | `string` | If Resend | Resend API key |
+| `smtp` | `SmtpConfig` | If SMTP | SMTP connection settings |
+| `replyTo` | `string` | No | Default reply-to address |
+
+## Resend provider
+
+Set `provider` to `'resend'` and provide your API key:
+
+```typescript
+EmailModule.forRoot({
+  provider: 'resend',
+  apiKey: env.RESEND_API_KEY,
+  from: { name: 'My App', email: 'noreply@example.com' },
+  queue: 'email-queue',
+})
+```
+
+## SMTP provider
+
+Set `provider` to `'smtp'` and provide connection settings:
+
+```typescript
+EmailModule.forRoot({
+  provider: 'smtp',
+  smtp: {
+    host: 'smtp.example.com',
+    port: 587,
+    secure: false,
+    username: env.SMTP_USERNAME,
+    password: env.SMTP_PASSWORD,
+  },
+  from: { name: 'My App', email: 'noreply@example.com' },
+  queue: 'email-queue',
+})
+```
+
+### SmtpConfig
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `host` | `string` | Yes | SMTP server hostname |
+| `port` | `number` | Yes | SMTP server port |
+| `secure` | `boolean` | No | Use TLS |
+| `username` | `string` | No | Auth username |
+| `password` | `string` | No | Auth password |
+
+## Sending emails
+
+Inject `EmailService` and call `send`:
+
+```typescript
+import { Transient, inject } from 'stratal'
+import { EMAIL_TOKENS, type EmailService } from 'stratal/email'
+
+@Transient()
+export class NotificationService {
+  constructor(
+    @inject(EMAIL_TOKENS.EmailService) private readonly email: EmailService,
+  ) {}
+
+  async sendWelcome(userEmail: string, userName: string) {
+    await this.email.send({
+      to: userEmail,
+      subject: `Welcome, ${userName}!`,
+      html: `<h1>Welcome to our platform, ${userName}!</h1>`,
+    })
+  }
+}
+```
+
+The `send` method accepts the following fields:
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `to` | `string \| string[]` | Yes | Recipient email(s) |
+| `from` | `{ name?: string; email: string }` | No | Sender (defaults to module config) |
+| `subject` | `string` | Yes | Email subject (1-500 characters) |
+| `html` | `string` | One of `html`, `text`, or `template` | HTML content |
+| `text` | `string` | One of `html`, `text`, or `template` | Plain text content |
+| `template` | `ReactElement` | One of `html`, `text`, or `template` | React Email template |
+| `cc` | `string[]` | No | Carbon copy recipients |
+| `bcc` | `string[]` | No | Blind carbon copy recipients |
+| `replyTo` | `string` | No | Reply-to address |
+| `attachments` | `EmailAttachment[]` | No | Email attachments |
+| `metadata` | `Record<string, unknown>` | No | Custom metadata for tracking |
+
+<Aside type="note">
+  `send` dispatches the email to the queue and returns immediately. The actual sending happens asynchronously in the `EmailConsumer`. This keeps your request handlers fast.
+</Aside>
+
+## React Email templates
+
+Instead of writing raw HTML, you can use [React Email](https://react.email/) components. Pass a React element as the `template` prop:
+
+```typescript
+import React from 'react'
+import { WelcomeEmail } from './templates/welcome'
+
+await this.email.send({
+  to: 'user@example.com',
+  subject: 'Welcome!',
+  template: React.createElement(WelcomeEmail, { name: 'Alice' }),
+})
+```
+
+The template is rendered to HTML before being dispatched to the queue. Define your templates as regular React components:
+
+```tsx
+// templates/welcome.tsx
+import { Html, Body, Heading, Text } from '@react-email/components'
+
+interface WelcomeEmailProps {
+  name: string
+}
+
+export function WelcomeEmail({ name }: WelcomeEmailProps) {
+  return (
+    <Html>
+      <Body>
+        <Heading>Welcome, {name}!</Heading>
+        <Text>We are glad to have you on board.</Text>
+      </Body>
+    </Html>
+  )
+}
+```
+
+## Batch sending
+
+Send multiple emails in one call using `sendBatch`:
+
+```typescript
+await this.email.sendBatch({
+  messages: [
+    {
+      to: 'user1@example.com',
+      subject: 'Notification',
+      text: 'Hello user 1',
+    },
+    {
+      to: 'user2@example.com',
+      subject: 'Notification',
+      text: 'Hello user 2',
+    },
+  ],
+})
+```
+
+Each message is dispatched as a separate queue entry with message type `email.send`. The batch can contain up to 100 messages.
+
+## Attachments
+
+The email module supports two types of attachments:
+
+### Inline attachments
+
+Provide the file content as a base64-encoded string:
+
+```typescript
+await this.email.send({
+  to: 'user@example.com',
+  subject: 'Your invoice',
+  text: 'Please find your invoice attached.',
+  attachments: [
+    {
+      filename: 'invoice.pdf',
+      content: base64EncodedPdf,
+      contentType: 'application/pdf',
+    },
+  ],
+})
+```
+
+<Aside type="caution">
+  Inline attachments are base64-encoded into the queue message payload, so they are subject to Cloudflare Queue's message size limit. Use inline attachments only for small files. For larger files, use [storage-based attachments](#storage-attachments) instead to avoid exceeding the queue message size limit.
+</Aside>
+
+### Storage attachments
+
+Reference a file stored in the [Storage](/integrations/storage/) module:
+
+```typescript
+await this.email.send({
+  to: 'user@example.com',
+  subject: 'Your report',
+  text: 'Please find your report attached.',
+  attachments: [
+    {
+      filename: 'report.pdf',
+      storageKey: 'reports/2026/02/monthly-report.pdf',
+      disk: 'documents',
+    },
+  ],
+})
+```
+
+The `EmailConsumer` downloads the file from storage at processing time and attaches it to the email.
+
+## Queue integration
+
+The email module uses the queue system internally. Here is how the flow works:
+
+1. You call `emailService.send()` in your request handler.
+2. The email service renders any React template and dispatches a queue message with type `email.send`.
+3. The `EmailConsumer` (auto-registered by the module) picks up the message.
+4. The consumer resolves attachments (decodes inline base64 or downloads from storage).
+5. The consumer creates the configured email provider and sends the email.
+6. On success, the message is acknowledged. On failure, it is retried.
+
+You do not need to register the `EmailConsumer` yourself. It is included automatically when you configure the `EmailModule`.
+
+<Aside type="tip">
+  The queue-based approach means email failures do not affect your API responses. Failed emails are retried automatically by Cloudflare Queues, and you can monitor failures through the consumer's error logging.
+</Aside>
+
+## Next steps
+
+- [Queues](/integrations/queues/) for details on queue configuration and consumers.
+- [Storage](/integrations/storage/) for setting up file storage used by storage-based attachments.
+- [Internationalization](/integrations/i18n/) for translating email subjects and content.

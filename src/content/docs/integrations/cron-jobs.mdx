@@ -1,0 +1,165 @@
+---
+title: Cron Jobs
+description: Schedule recurring tasks with Cloudflare Cron Triggers using the CronJob interface, error handling, and the StratalWorker scheduled handler.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal integrates with [Cloudflare Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/) to run scheduled tasks. You define jobs as injectable classes that implement the `CronJob` interface, register them in a module, and Stratal handles matching, execution, and error collection.
+
+## Setup
+
+Add cron triggers to your `wrangler.jsonc`. Each entry defines a schedule expression:
+
+```jsonc
+{
+  "triggers": {
+    "crons": [
+      "0 2 * * *",
+      "*/15 * * * *"
+    ]
+  }
+}
+```
+
+No module import is required for cron support. The `CronManager` is registered as a core service automatically. You only need to create job classes and add them to a module's `jobs` array.
+
+## Creating a cron job
+
+A cron job is a class that implements the `CronJob` interface:
+
+```typescript
+import { Transient, inject } from 'stratal'
+import type { CronJob } from 'stratal/cron'
+import { LOGGER_TOKENS, type LoggerService } from 'stratal/logger'
+
+@Transient()
+export class CleanupJob implements CronJob {
+  readonly schedule = '0 2 * * *' // Daily at 2 AM UTC
+
+  constructor(
+    @inject(LOGGER_TOKENS.LoggerService) private readonly logger: LoggerService,
+  ) {}
+
+  async execute(controller: ScheduledController) {
+    this.logger.info('Running daily cleanup', {
+      scheduledTime: controller.scheduledTime,
+    })
+    // perform cleanup logic
+  }
+
+  async onError(error: Error, controller: ScheduledController) {
+    this.logger.error('Cleanup job failed', error)
+  }
+}
+```
+
+The `CronJob` interface has three members:
+
+| Member | Type | Required | Description |
+| --- | --- | --- | --- |
+| `schedule` | `readonly string` | Yes | Cron expression that must match a trigger in `wrangler.jsonc` |
+| `execute` | `(controller: ScheduledController) => Promise<void>` | Yes | The work to perform when the schedule fires |
+| `onError` | `(error: Error, controller: ScheduledController) => Promise<void>` | No | Called when `execute` throws; errors here are silently caught |
+
+The `ScheduledController` is the standard Cloudflare Workers type that provides `scheduledTime` (the timestamp of when the trigger fired) and `cron` (the matching cron expression).
+
+## Registering jobs
+
+Add job classes to the `jobs` array in any module:
+
+```typescript
+import { Module } from 'stratal'
+import { CleanupJob } from './cleanup.job'
+import { ReportJob } from './report.job'
+
+@Module({
+  jobs: [CleanupJob, ReportJob],
+})
+export class MaintenanceModule {}
+```
+
+Jobs are resolved from the DI container as singletons, so they can inject any service your application provides.
+
+## Multiple jobs on the same schedule
+
+You can register several jobs with the same `schedule` value. Stratal groups jobs by their cron expression and runs all matching jobs when the trigger fires:
+
+```typescript
+@Transient()
+export class ExpireSessionsJob implements CronJob {
+  readonly schedule = '0 * * * *' // Every hour
+
+  async execute(controller: ScheduledController) {
+    // expire old sessions
+  }
+}
+
+@Transient()
+export class RefreshCacheJob implements CronJob {
+  readonly schedule = '0 * * * *' // Same schedule
+
+  async execute(controller: ScheduledController) {
+    // refresh cache entries
+  }
+}
+```
+
+Both jobs will execute whenever the `0 * * * *` trigger fires.
+
+## Error handling
+
+Jobs within the same schedule run sequentially. If a job's `execute` method throws:
+
+1. The error is caught and stored.
+2. The job's `onError` callback is called (if defined). If `onError` itself throws, that error is silently ignored.
+3. Execution continues with the next job.
+4. After all jobs have run, if any failed, Stratal throws a `CronExecutionError` that aggregates every failure.
+
+```typescript
+import { CronExecutionError } from 'stratal/cron'
+```
+
+The `CronExecutionError` includes:
+- The cron expression that triggered the run
+- The number of failed jobs
+- A summary string listing each failed job's name and error message
+
+This aggregate error is then handled by the `GlobalErrorHandler`, ensuring all failures are logged even if individual jobs provide their own `onError` handlers.
+
+<Aside type="note">
+  Because jobs run sequentially, a slow job delays subsequent jobs on the same schedule. Keep individual jobs focused and fast.
+</Aside>
+
+## Worker setup
+
+Your worker class needs to extend `StratalWorker`. The `scheduled` method is already implemented in the base class:
+
+```typescript
+import 'reflect-metadata'
+import { StratalWorker } from 'stratal'
+import { AppModule } from './app.module'
+
+export default class Worker extends StratalWorker {
+  protected configure() {
+    return { module: AppModule }
+  }
+}
+```
+
+When Cloudflare fires a cron trigger, `StratalWorker.scheduled(controller)` is called. It:
+
+1. Initializes the application (if not already running).
+2. Creates a request scope with a default `en` locale for i18n context.
+3. Calls `cronManager.executeScheduled(controller)`, which finds and runs all jobs matching `controller.cron`.
+4. If any jobs fail, the `GlobalErrorHandler` logs the aggregate error.
+
+<Aside type="tip">
+  You can override the `scheduled` method in your worker for custom pre- or post-processing, but make sure to call `super.scheduled(controller)` or `app.handleScheduled(controller)` to keep the standard job execution flow.
+</Aside>
+
+## Next steps
+
+- [Queues](/integrations/queues/) for async message processing alongside scheduled tasks.
+- [Logging](/integrations/logging/) to configure how job execution logs are formatted.
+- [Modules](/core-concepts/modules/) to learn how the `jobs` array fits into module configuration.

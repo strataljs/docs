@@ -1,0 +1,231 @@
+---
+title: Internationalization
+description: Built-in i18n with automatic locale detection, type-safe translations, parameter interpolation, and Zod validation error translation.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal includes a built-in internationalization (i18n) module that provides locale detection, type-safe translation keys, parameter interpolation, and automatic translation of validation errors. The module is loaded automatically as part of the framework core, so system messages like error responses are translated out of the box.
+
+## Default behavior
+
+The `I18nModule` is auto-loaded by Stratal. Without any configuration, it:
+
+- Detects the request locale from the `X-Locale` header
+- Falls back to `en` when the header is missing or unsupported
+- Translates all built-in system messages (error responses, validation errors) in English
+- Makes `I18nService` available for injection throughout your application
+
+You do not need to import the module for basic i18n support to work.
+
+## Configuration
+
+To add your own translations or support additional locales, call `I18nModule.withRoot()` in your root module:
+
+```typescript
+import { Module } from 'stratal'
+import { I18nModule } from 'stratal/i18n'
+import en from './i18n/en'
+import fr from './i18n/fr'
+
+@Module({
+  imports: [
+    I18nModule.withRoot({
+      defaultLocale: 'en',
+      fallbackLocale: 'en',
+      locales: ['en', 'fr'],
+      messages: { en, fr },
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+### I18nModuleOptions
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `defaultLocale` | `string` | `'en'` | Locale used when no `X-Locale` header is present |
+| `fallbackLocale` | `string` | `'en'` | Locale used when a translation key is missing in the requested locale |
+| `locales` | `string[]` | `['en']` | List of supported locales |
+| `messages` | `Record<string, Record<string, unknown>>` | `{}` | Application-specific messages, keyed by locale |
+
+## Defining messages
+
+Messages are nested objects. Each key path becomes a dot-notation translation key:
+
+```typescript
+// i18n/en.ts
+export default {
+  common: {
+    welcome: 'Welcome',
+    greeting: 'Hello, {name}!',
+  },
+  users: {
+    created: 'User {email} has been created.',
+    deleted: 'User account deleted successfully.',
+  },
+}
+```
+
+```typescript
+// i18n/fr.ts
+export default {
+  common: {
+    welcome: 'Bienvenue',
+    greeting: 'Bonjour, {name} !',
+  },
+  users: {
+    created: "L'utilisateur {email} a été créé.",
+    deleted: 'Compte utilisateur supprimé avec succès.',
+  },
+}
+```
+
+Your application messages are deep-merged with the built-in system messages. If you define a key that already exists in the system messages, your value takes precedence.
+
+## Using translations
+
+Inject `I18nService` and call `t()` with a message key:
+
+```typescript
+import { Transient, inject } from 'stratal'
+import { I18N_TOKENS, type II18nService } from 'stratal/i18n'
+
+@Transient()
+export class GreetingService {
+  constructor(
+    @inject(I18N_TOKENS.I18nService) private readonly i18n: II18nService,
+  ) {}
+
+  getWelcome() {
+    return this.i18n.t('common.welcome')
+  }
+
+  getGreeting(name: string) {
+    return this.i18n.t('common.greeting', { name })
+  }
+}
+```
+
+The `t` method signature:
+
+```typescript
+t(key: MessageKeys, params?: MessageParams): string
+```
+
+- `key` is a type-safe union of all system and application message keys (dot-notation paths).
+- `params` is an optional `Record<string, string | number>` for interpolation.
+- Returns the translated string, or the key itself if no translation is found.
+
+### Parameter interpolation
+
+Use `{paramName}` placeholders in your messages. Pass the values as the second argument to `t()`:
+
+```typescript
+// Message: 'Hello, {name}! You have {count} notifications.'
+i18n.t('common.notifications', { name: 'Alice', count: 5 })
+// Result: 'Hello, Alice! You have 5 notifications.'
+```
+
+## Locale detection
+
+Stratal detects the locale from the `X-Locale` request header. The detection flow is:
+
+1. Read the `X-Locale` header from the incoming request.
+2. Convert it to lowercase.
+3. Check if the locale is in the configured `locales` array.
+4. If supported, use it for the request. If not, fall back to `defaultLocale`.
+
+The locale is set on the `RouterContext` and is available for the entire request lifecycle, including validation error messages and queue message metadata.
+
+```
+GET /api/users
+X-Locale: fr
+```
+
+<Aside type="tip">
+  For queue consumers and cron jobs, the locale defaults to `'en'` unless the queue message contains a `metadata.locale` value. The queue sender automatically captures the current request locale.
+</Aside>
+
+## Validation error translation
+
+When the i18n module is active, Zod validation errors are automatically translated based on the request locale. This works through a global Zod error map that intercepts every validation error and translates it using the i18n service.
+
+For example, a request with `X-Locale: fr` that fails body validation will return French error messages:
+
+```json
+{
+  "code": 1003,
+  "message": "Erreur de validation",
+  "metadata": {
+    "issues": [
+      {
+        "path": "email",
+        "message": "Adresse e-mail invalide",
+        "code": "invalid_format"
+      }
+    ]
+  }
+}
+```
+
+The translation covers all standard Zod error codes including `required`, `invalid_type`, `too_small`, `too_big`, and format validations like `email`, `url`, `uuid`, and `datetime`.
+
+### Custom validation messages
+
+Use the `withI18n` helper to attach translatable messages to custom Zod validations:
+
+```typescript
+import { z } from 'stratal/validation'
+import { withI18n } from 'stratal/i18n'
+
+const schema = z.object({
+  password: z.string().min(8, withI18n('validation.passwordStrength')),
+  domain: z.string().min(1, withI18n('zodI18n.errors.custom.domainRequired')),
+})
+```
+
+The `withI18n` function creates a deferred translation that resolves at validation time using the request's locale context. You can also pass interpolation parameters:
+
+```typescript
+z.string().min(5, withI18n('validation.minLength', { min: 5 }))
+```
+
+## Built-in system messages
+
+Stratal ships with English translations for all framework messages. These cover:
+
+- **Error responses**: `errors.internalError`, `errors.notFound`, `errors.unauthorized`, `errors.forbidden`, and many more
+- **Validation messages**: `validation.required`, `validation.email`, `validation.minLength`, `validation.maxLength`, and others
+- **Zod error codes**: Comprehensive translations for every Zod v4 issue type (`zodI18n.errors.required`, `zodI18n.errors.invalid_type`, `zodI18n.errors.too_small.string.inclusive`, etc.)
+- **Domain-specific errors**: Queue, cron, storage, cache, email, and auth error messages
+
+To override any system message, define the same key in your application messages. Your value will take precedence over the built-in one.
+
+## Type-safe message keys
+
+When you augment the `AppMessages` interface, the `MessageKeys` type automatically includes your custom keys alongside the system keys:
+
+```typescript
+// In your type declarations
+declare module 'stratal' {
+  interface AppMessages {
+    common: {
+      welcome: string
+      greeting: string
+    }
+    users: {
+      created: string
+    }
+  }
+}
+```
+
+This gives you autocomplete and compile-time checks for `i18n.t()` calls throughout your application.
+
+## Next steps
+
+- [Validation](/guides/validation/) to learn how validation schemas integrate with i18n error messages.
+- [Error Handling](/guides/error-handling/) for details on how translated errors are returned to clients.
+- [Queues](/integrations/queues/) to see how locale context is preserved across queue messages.

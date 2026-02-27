@@ -1,0 +1,219 @@
+---
+title: Queues
+description: Send and consume messages with Cloudflare Queues using the QueueModule, type-safe queue names, and consumer routing.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal provides a built-in queue system backed by [Cloudflare Queues](https://developers.cloudflare.com/queues/). The `QueueModule` gives you a provider-based abstraction over queue operations with type-safe queue names, automatic message enrichment, and consumer routing by message type.
+
+## Setup
+
+### 1. Configure your queue binding
+
+Add a queue binding to your `wrangler.jsonc`:
+
+```jsonc
+{
+  "queues": {
+    "producers": [
+      {
+        "binding": "NOTIFICATIONS_QUEUE",
+        "queue": "notifications-queue"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "notifications-queue"
+      }
+    ]
+  }
+}
+```
+
+The binding name must be the UPPER_SNAKE_CASE version of the queue name. Stratal converts kebab-case queue names automatically (for example, `notifications-queue` resolves to the `NOTIFICATIONS_QUEUE` binding).
+
+### 2. Register the QueueModule
+
+Import `QueueModule` in your root module and call `forRootAsync` to configure the provider, then call `registerQueue` for each queue your application uses:
+
+```typescript
+import { Module, DI_TOKENS, type StratalEnv } from 'stratal'
+import { QueueModule } from 'stratal/queue'
+
+@Module({
+  imports: [
+    QueueModule.forRootAsync({
+      inject: [DI_TOKENS.CloudflareEnv],
+      useFactory: (env: StratalEnv) => ({
+        provider: env.ENVIRONMENT === 'test' ? 'sync' : 'cloudflare',
+      }),
+    }),
+    QueueModule.registerQueue('notifications-queue'),
+  ],
+})
+export class AppModule {}
+```
+
+The `provider` option accepts `'cloudflare'` for production or `'sync'` for testing. When no options are provided, it defaults to `'cloudflare'`.
+
+`registerQueue` creates a DI binding that maps the queue name to an `IQueueSender` instance, so you can inject it anywhere in your application.
+
+## Type-safe queue names
+
+By default, `QueueName` is typed as `string`. You can narrow it by augmenting the `QueueNames` interface so that `QueueName` becomes a union of the declared keys. Any call to `registerQueue` or `@InjectQueue` with an invalid name will then produce a type error.
+
+The recommended approach is to **derive queue names automatically from your `Cloudflare.Env` bindings** rather than maintaining a separate manual list. A binding named `NOTIFICATIONS_QUEUE` produces the queue name `notifications-queue`, and `ORDER_EVENTS_QUEUE` produces `order-events-queue`. This way you only maintain bindings in one place — your Wrangler config.
+
+See the [Environment Typing — Typing queue bindings](/guides/environment-typing/#typing-queue-bindings) guide for the full setup, including the TypeScript utility types that perform this conversion.
+
+## Sending messages
+
+Inject a queue sender using the queue name as the injection token:
+
+```typescript
+import { Transient } from 'stratal'
+import { InjectQueue, type IQueueSender } from 'stratal/queue'
+
+@Transient()
+export class NotificationService {
+  constructor(
+    @InjectQueue('notifications-queue') private readonly queue: IQueueSender,
+  ) {}
+
+  async sendWelcome(userId: string, email: string) {
+    await this.queue.dispatch({
+      type: 'notification.welcome',
+      payload: { userId, email },
+    })
+  }
+}
+```
+
+The `dispatch` method accepts a `DispatchMessage` object. You provide `type`, `payload`, and optionally `metadata`. The `id` and `timestamp` fields are generated automatically:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `type` | `string` | Message type used for consumer routing |
+| `payload` | `T` | The message payload (generic) |
+| `metadata` | `object?` | Optional metadata; `locale` is auto-set from the i18n context if not provided |
+
+## Consuming messages
+
+Create a consumer class that implements the `IQueueConsumer` interface:
+
+```typescript
+import { Transient } from 'stratal'
+import type { IQueueConsumer, QueueMessage } from 'stratal/queue'
+
+interface WelcomePayload {
+  userId: string
+  email: string
+}
+
+@Transient()
+export class WelcomeConsumer implements IQueueConsumer<WelcomePayload> {
+  readonly messageTypes = ['notification.welcome']
+
+  async handle(message: QueueMessage<WelcomePayload>) {
+    const { userId, email } = message.payload
+    // Send welcome email, create onboarding tasks, etc.
+  }
+
+  async onError(error: Error, message: QueueMessage<WelcomePayload>) {
+    console.error(`Failed to process welcome for ${message.payload.userId}`, error)
+  }
+}
+```
+
+The `messageTypes` array declares which message types this consumer handles. A consumer can listen to multiple types. Use the wildcard `'*'` to match all message types.
+
+The `onError` method is optional. When `handle` throws, `onError` is called and the message is retried automatically.
+
+### Register consumers
+
+Add consumer classes to the `consumers` array in any module:
+
+```typescript
+@Module({
+  consumers: [WelcomeConsumer],
+})
+export class NotificationsModule {}
+```
+
+Stratal resolves each consumer from the DI container and indexes it by its declared message types. When a queue message arrives, every consumer whose `messageTypes` includes the message's `type` will receive it.
+
+## Message structure
+
+Every queue message follows the `QueueMessage` interface:
+
+```typescript
+interface QueueMessage<T = unknown> {
+  id: string          // Auto-generated UUID
+  timestamp: number   // Auto-generated (ms since epoch)
+  type: string        // Routing key for consumers
+  payload: T          // Your message data
+  metadata?: {
+    locale?: string   // Auto-set from i18n context
+    [key: string]: unknown
+  }
+}
+```
+
+When you call `dispatch`, the `QueueSender` enriches your message with:
+- A unique `id` via `crypto.randomUUID()`
+- A `timestamp` via `Date.now()`
+- The current `locale` from the i18n service (if not already set in metadata)
+
+## The sync provider
+
+The `sync` provider is designed for testing. Instead of sending messages to a Cloudflare Queue, it processes them synchronously by calling the matching consumer's `handle` method directly:
+
+```typescript
+QueueModule.forRootAsync({
+  inject: [DI_TOKENS.CloudflareEnv],
+  useFactory: (env: StratalEnv) => ({
+    provider: env.ENVIRONMENT === 'test' ? 'sync' : 'cloudflare',
+  }),
+})
+```
+
+With the sync provider, `dispatch` blocks until the consumer finishes processing. If a consumer throws, the error propagates immediately, making it straightforward to assert on failures in tests.
+
+<Aside type="tip">
+  Use the sync provider in your test configuration so you can verify consumer behavior without needing a running Cloudflare Queue.
+</Aside>
+
+## Worker setup
+
+To handle queue messages in production, your worker class must extend `StratalWorker`. The `queue` method is already implemented in the base class:
+
+```typescript
+import 'reflect-metadata'
+import { StratalWorker } from 'stratal'
+import { AppModule } from './app.module'
+
+export default class Worker extends StratalWorker {
+  protected configure() {
+    return { module: AppModule }
+  }
+}
+```
+
+When a batch of messages arrives from Cloudflare Queues, `StratalWorker` calls `app.handleQueue(batch, queueName)`, which:
+
+1. Extracts the locale from the first message's metadata for i18n context.
+2. Creates a request scope so consumers can use request-scoped dependencies.
+3. Iterates over each message in the batch.
+4. Finds matching consumers by message type.
+5. Calls `handle` on each consumer. On success, the message is acknowledged. On failure, `onError` is called and the message is retried.
+
+<Aside type="note">
+  Messages are routed by their `type` field, not by the queue name. This means consumers from different modules can handle messages from the same queue, as long as they declare the matching message type.
+</Aside>
+
+## Next steps
+
+- [Modules](/core-concepts/modules/) to learn how the `consumers` array fits into module configuration.
+- [Email](/integrations/email/) to see how the email integration uses queues for async dispatch.
+- [Cron Jobs](/integrations/cron-jobs/) for scheduled task execution.

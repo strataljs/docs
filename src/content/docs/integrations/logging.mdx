@@ -1,0 +1,228 @@
+---
+title: Logging
+description: Structured logging with configurable log levels, JSON and pretty formatters, console transports, and non-blocking output via waitUntil.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal includes a built-in logging system with structured output, configurable log levels, pluggable formatters, and non-blocking writes. Logs are dispatched through Cloudflare Workers' `waitUntil` API so they never block your response.
+
+## Configuration
+
+Configure logging in the `configure()` method of your worker:
+
+```typescript
+import 'reflect-metadata'
+import { StratalWorker } from 'stratal'
+import { AppModule } from './app.module'
+
+export default class Worker extends StratalWorker {
+  protected configure() {
+    return {
+      module: AppModule,
+      logging: {
+        level: 'info',
+        formatter: 'json',
+      },
+    }
+  }
+}
+```
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `level` | `'debug' \| 'info' \| 'warn' \| 'error'` | `'info'` | Minimum log level to output |
+| `formatter` | `'json' \| 'pretty'` | `'json'` | Output format |
+
+## Log levels
+
+Stratal supports four log levels, ordered by priority:
+
+| Level | Priority | Description |
+| --- | --- | --- |
+| `debug` | 0 | Detailed diagnostic information for development |
+| `info` | 1 | General operational events |
+| `warn` | 2 | Unexpected situations that are not errors |
+| `error` | 3 | Failures that need attention |
+
+The configured level acts as a minimum threshold. A level of `info` outputs info, warn, and error messages but suppresses debug. A level of `error` outputs only error messages.
+
+## Using the logger
+
+Inject `LoggerService` using the `LOGGER_TOKENS.LoggerService` token:
+
+```typescript
+import { Transient, inject } from 'stratal'
+import { LOGGER_TOKENS, type LoggerService } from 'stratal/logger'
+
+@Transient()
+export class OrderService {
+  constructor(
+    @inject(LOGGER_TOKENS.LoggerService) private readonly logger: LoggerService,
+  ) {}
+
+  async createOrder(userId: string, items: string[]) {
+    this.logger.info('Creating order', { userId, itemCount: items.length })
+
+    // ... create order logic
+
+    this.logger.debug('Order items', { items })
+  }
+}
+```
+
+The logger provides four methods, one for each level:
+
+```typescript
+logger.debug(message: string, context?: LogContext): void
+logger.info(message: string, context?: LogContext): void
+logger.warn(message: string, context?: LogContext): void
+logger.error(message: string, contextOrError?: LogContext | Error): void
+```
+
+All methods return immediately. The actual writing happens asynchronously via `waitUntil`.
+
+## Log context
+
+Pass a `LogContext` object (a `Record<string, unknown>`) as the second argument to attach structured data to the log entry:
+
+```typescript
+this.logger.info('Payment processed', {
+  orderId: 'order_123',
+  amount: 49.99,
+  currency: 'USD',
+  gateway: 'stripe',
+})
+```
+
+The context is merged with internal metadata (like `timestamp`) and included in the formatted output.
+
+## Error logging
+
+The `error` method accepts either a `LogContext` object or an `Error` instance:
+
+```typescript
+// With an Error object
+try {
+  await database.query(sql)
+} catch (error) {
+  this.logger.error('Database query failed', error)
+}
+
+// With context
+this.logger.error('Payment declined', {
+  orderId: 'order_123',
+  reason: 'insufficient_funds',
+})
+```
+
+When an `Error` is passed, the logger serializes its `message`, `name`, and `stack` into a structured `error` field on the log entry.
+
+## Formatters
+
+Formatters control how log entries are serialized to strings before being written to transports.
+
+### JsonFormatter
+
+The default formatter for production. Outputs each log entry as a single JSON line:
+
+```json
+{"level":"info","message":"Payment processed","timestamp":1708934400000,"orderId":"order_123","amount":49.99}
+```
+
+All context fields are spread into the top-level JSON object alongside `level`, `message`, and `timestamp`. If an error is present, it appears as a nested `error` object.
+
+### PrettyFormatter
+
+Designed for local development. Outputs color-coded, human-readable logs:
+
+```
+[2026-02-26T10:00:00.000Z] INFO : Payment processed
+  orderId: "order_123"
+  amount: 49.99
+  currency: "USD"
+```
+
+Each level gets its own color:
+
+| Level | Color |
+| --- | --- |
+| `debug` | Cyan |
+| `info` | Green |
+| `warn` | Yellow |
+| `error` | Red |
+
+Error stack traces are printed below the context when present.
+
+Switch to the pretty formatter in development:
+
+```typescript
+protected configure() {
+  return {
+    module: AppModule,
+    logging: {
+      level: 'debug',
+      formatter: 'pretty',
+    },
+  }
+}
+```
+
+## Transports
+
+Transports are responsible for writing formatted log entries to their destination. Stratal ships with a `ConsoleTransport` that routes logs to the appropriate console method:
+
+| Level | Console method |
+| --- | --- |
+| `debug` | `console.debug()` |
+| `info` | `console.info()` |
+| `warn` | `console.warn()` |
+| `error` | `console.error()` |
+
+### Custom transports
+
+You can create custom transports by implementing the `ILogTransport` interface:
+
+```typescript
+import type { ILogTransport, LogEntry } from 'stratal/logger'
+
+export class ExternalLogTransport implements ILogTransport {
+  readonly name = 'external'
+
+  async write(entry: LogEntry, formatted: string): Promise<void> {
+    // Send to an external logging service
+    await fetch('https://logs.example.com/ingest', {
+      method: 'POST',
+      body: formatted,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+}
+```
+
+The `write` method receives both the structured `LogEntry` and the pre-formatted string from the configured formatter. Use whichever is more appropriate for your transport.
+
+Transport errors are caught and logged to `console.error` as a fallback, so a failing transport never crashes your application.
+
+## Non-blocking logging
+
+Stratal uses Cloudflare Workers' `waitUntil` API to ensure logs are written without blocking your response:
+
+1. Your code calls `logger.info('message', context)`.
+2. The logger checks the log level. If the message is below the threshold, it returns immediately.
+3. The logger builds a `LogEntry`, formats it, and dispatches write promises to all transports.
+4. The combined promise is passed to `executionContext.waitUntil()`.
+5. The logger returns immediately. Your response is sent.
+6. The worker runtime keeps the isolate alive until the log writes complete.
+
+This means logging adds zero latency to your response times. Even if a transport is slow (for example, sending logs to an external service), the response is already on its way.
+
+<Aside type="note">
+  The `waitUntil` pattern is essential on Cloudflare Workers because the runtime may terminate the isolate after the response is sent. Without `waitUntil`, async log writes could be cut short.
+</Aside>
+
+## Next steps
+
+- [Error Handling](/guides/error-handling/) to learn how the global error handler uses the logger.
+- [Cron Jobs](/integrations/cron-jobs/) for logging in scheduled tasks.
+- [Dependency Injection](/core-concepts/dependency-injection/) for injecting `LoggerService` into your providers.
