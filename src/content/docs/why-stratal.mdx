@@ -1,0 +1,258 @@
+---
+title: Why Stratal
+description: The motivation behind building a modular framework for Cloudflare Workers, what problems it solves, and the philosophy that shapes its design.
+---
+
+Cloudflare Workers is one of the best platforms for building backend services today. Edge compute, globally distributed, zero cold starts on most plans, and a binding system that gives you databases, queues, storage, and more without managing infrastructure. I genuinely enjoy building on it.
+
+But after running a production project with five Workers, four queues, and seven cron jobs, the structural problems became impossible to ignore. Router setup, input validation, error handling, binding threading. These are not platform problems but scaffolding problems. The same patterns copied across every Worker, every consumer, every workflow processor. I wanted a layer that handled the repetitive parts so I could focus on business logic.
+
+That's what Stratal is. A modular framework that builds DX and structure on top of a great platform. If you just want to start building, head to the [installation guide](/getting-started/installation/).
+
+## The same scaffold, every time
+
+Every Worker I built started the same way. Set up a router. Parse request bodies. Validate input. Format JSON responses. Wire up error handling. Then do it all again for the next Worker.
+
+It wasn't just HTTP handlers either. The queue handler grew into a chain of `if` blocks that checked the queue name and type-cast each branch. The scheduled handler became a switch block mapping cron strings to job types. Each handler needed access to the same services, but there was no shared initialization, so every entry point manually wired its own dependencies.
+
+```typescript
+export default {
+  async fetch(request, env) {
+    // Set up router, parse body, validate, format responses...
+  },
+  async queue(batch, env) {
+    if (batch.queue.startsWith('order-queue')) {
+      await orderConsumer.queue(batch as MessageBatch<OrderMessage>, env);
+    }
+    if (batch.queue.startsWith('webhook-queue')) {
+      await webhookConsumer.queue(batch as MessageBatch<WebhookMessage>, env);
+    }
+    if (batch.queue.startsWith('notification-queue')) {
+      await notificationConsumer.queue(batch as MessageBatch<NotificationMessage>, env);
+    }
+  },
+  async scheduled(controller, env) {
+    switch (controller.cron) {
+      case '0 2 * * *': jobType = 'expiration_check'; break;
+      case '0 5 * * *': jobType = 'renewal'; break;
+      case '0 6 * * *': jobType = 'warnings'; break;
+      // Four more cases...
+      default: console.warn(`Unknown cron: ${controller.cron}`);
+    }
+  },
+}
+```
+
+For one Worker, this is manageable. Across five, with each one growing its own dispatch trees and service wiring, the scaffolding becomes the thing you spend most of your time on. You end up spending your time on plumbing instead of business logic.
+
+## OpenAPI that writes itself
+
+I've worked on too many APIs where the documentation was a separate spec file that someone would update "later." The previous project had no API docs at all. Within a week of any spec file existing, it drifts from the implementation.
+
+Stratal generates the OpenAPI spec directly from your route definitions. The same decorators that handle requests also produce the documentation. One source of truth.
+
+```typescript
+@Controller('/api/users', { tags: ['Users'] })
+export class UsersController implements IController {
+  @Route({
+    body: createUserSchema,
+    response: userResponseSchema,
+    summary: 'Create a user',
+  })
+  async create(ctx: RouterContext) {
+    const body = await ctx.body<CreateUser>()
+    const user = this.usersService.create(body)
+    return ctx.json({ data: user }, 201)
+  }
+}
+```
+
+The Zod schemas you write for validation become the schemas in your OpenAPI spec. The method name `create` automatically maps to `POST`. Add the `OpenAPIModule` to your app, and you get a JSON spec at `/api/openapi.json` and an interactive docs UI at `/api/docs` with zero additional work.
+
+This matters beyond human-readable docs. As AI agents and automated systems increasingly consume APIs, having a machine-readable, always-accurate spec is a real advantage. Your API becomes self-describing.
+
+## Routes should be obvious
+
+Stratal is opinionated about routing. Instead of manually registering routes for every endpoint, your controller method names determine the HTTP verb, path, and default status code automatically.
+
+```typescript
+// index  → GET    /api/users         → 200
+// show   → GET    /api/users/:id     → 200
+// create → POST   /api/users         → 201
+// update → PUT    /api/users/:id     → 200
+// patch  → PATCH  /api/users/:id     → 200
+// destroy→ DELETE /api/users/:id     → 200
+```
+
+Name a method `create` on a `@Controller('/api/users')` and it becomes `POST /api/users` with a `201` default status. Name it `show` and it becomes `GET /api/users/:id`. No route table to maintain, no decorators specifying HTTP verbs. The convention is the configuration.
+
+Compare that to manually registering every route with its full path, HTTP method, middleware chain, and handler reference. In the previous project, a single endpoint registration looked like `app.post('/api/courses/:courseId/notes/process/', authMiddleware, validationMiddleware, featureGuard, materialMiddleware, lockMiddleware, handler)` with comments documenting which variables each middleware sets. The convention approach trades some flexibility for consistency that scales.
+
+## Queues and cron should be declarative
+
+The `queue()` and `scheduled()` exports in Cloudflare Workers are intentionally low-level. That's the right call for a platform. It gives you full control over how messages and triggers are dispatched. But at the application layer, that low-level control turns into a maintenance problem. The scheduled handler I maintained was a switch block with seven cron patterns. Some cases set a `jobType` variable and fell through to shared logic. Others short-circuited with their own workflow creation and an early `return`. Adding a new cron job meant reading the whole block to understand which pattern to follow, then duplicating the try-catch and setup logic.
+
+In Stratal, a queue consumer declares what message types it cares about:
+
+```typescript
+@Transient()
+export class NotificationConsumer implements IQueueConsumer<NotificationPayload> {
+  readonly messageTypes = ['notification.send']
+
+  async handle(message: QueueMessage<NotificationPayload>) {
+    const { to, subject, body } = message.payload
+    // Focus on the business logic, not the dispatch
+  }
+
+  async onError(error: Error, message: QueueMessage<NotificationPayload>) {
+    console.error(`Failed to process notification ${message.id}:`, error)
+  }
+}
+```
+
+And a cron job is a class with a schedule:
+
+```typescript
+@Transient()
+export class CleanupJob implements CronJob {
+  readonly schedule = '0 2 * * *'
+
+  async execute() {
+    console.log('Running daily cleanup')
+  }
+}
+```
+
+You register them in a module, and Stratal handles the routing. No switch blocks. No manual dispatch trees. Each consumer and job is isolated, typed, and testable on its own.
+
+## Modules give you structure without the overhead
+
+Without dependency injection, every entry point in your application manually constructs the services it needs. In the previous project, both a queue consumer and a workflow processor needed the same set of services. The initialization block looked like this in both files:
+
+```typescript
+const paystackClient = new PaystackClient(env.PAYSTACK_SECRET_KEY);
+const paymentMethodRepo = new PaymentMethodRepository(tx);
+const rateLimiter = new RateLimiter(env.KV, 'payment');
+const invoiceService = new InvoiceService(tx, env);
+const billingAddressService = new BillingAddressService(tx);
+const billingPeriodService = new BillingPeriodService(tx);
+const addonService = new AddonService(
+  tx, env, paystackClient, paymentMethodRepo, rateLimiter,
+  invoiceService, billingAddressService, billingPeriodService
+);
+```
+
+Eight services, copy-pasted between two files. If a constructor signature changed, you had to update every place it was instantiated. One service in the project was constructed 28 times across routes, consumers, and processors, always with the same arguments. Functions ended up with ten-parameter signatures because there was no other way to pass dependencies around.
+
+Stratal's `@Module` decorator eliminates this:
+
+```typescript
+@Module({
+  imports: [StorageModule.withRoot({ bucket: 'uploads' })],
+  providers: [NotesService],
+  controllers: [NotesController],
+  consumers: [NotificationConsumer],
+  jobs: [CleanupJob],
+})
+export class NotesModule {}
+```
+
+Modules import other modules. Providers are registered globally, so any service is available wherever it's injected. When you look at a module definition, you can see exactly what it owns and what it depends on.
+
+Dependency injection ties it together. Services declare their dependencies through constructor parameters, and the container resolves them automatically. No manual wiring. No global singletons floating around.
+
+Some modules need runtime configuration. For those, `forRoot` and `forRootAsync` let you create dynamic modules that accept options at registration time. The `StorageModule.withRoot({ bucket: 'uploads' })` call above is an example of this pattern.
+
+The entry point for your entire Worker is a single class:
+
+```typescript
+export default class Worker extends StratalWorker {
+  protected configure() {
+    return { module: AppModule }
+  }
+}
+```
+
+`StratalWorker` implements `fetch()`, `queue()`, and `scheduled()` for you. Define your module tree, and the framework handles the rest.
+
+## Sharing code across Workers
+
+When you have multiple Workers in a project, code sharing gets awkward quickly. The previous project needed six shared packages just to share code between five Workers. Each package had its own export maps, build configuration, and version alignment overhead. Changing a shared type meant rebuilding packages, checking exports, and hoping nothing fell out of sync.
+
+In Stratal, a module is just a class. Sharing code between Workers means importing it.
+
+Say you have an `ApiKeyGuard` that validates requests against an API key stored in your environment bindings:
+
+```typescript
+@Transient()
+export class ApiKeyGuard implements CanActivate {
+  constructor(@inject(DI_TOKENS.CloudflareEnv) private readonly env: StratalEnv) {}
+
+  canActivate(context: RouterContext): boolean {
+    const apiKey = context.header('x-api-key')
+    return apiKey === this.env.API_KEY
+  }
+}
+```
+
+This guard, along with its module, can live in a shared package and be imported into any Worker that needs it. The guard's dependency on `StratalEnv` is resolved by each Worker's own container. No special configuration. No build tooling gymnastics.
+
+TypeScript keeps things honest too. Stratal uses module augmentation for environment bindings, so each Worker declares what it expects:
+
+```typescript
+declare module 'stratal' {
+  interface StratalEnv {
+    API_KEY: string
+    DATABASE: D1Database
+  }
+}
+```
+
+If a Worker imports a module that depends on `API_KEY` but doesn't declare that binding, TypeScript catches it at compile time. Not at 3 AM in production.
+
+## Testing that reads like what it tests
+
+Because your app is a module graph, testing is just compiling a subset of it. Each test gets its own compiled module. The HTTP client routes requests through the real application. No fake environment objects. No 30-line setup blocks where you manually construct every service and its dependencies just to test one handler.
+
+```typescript
+const module = await Test.createTestingModule({
+  imports: [NotesModule],
+}).compile()
+
+const response = await module.http
+  .post('/api/notes')
+  .withBody({ title: 'Test Note', content: 'Hello' })
+  .send()
+
+response.assertCreated()
+await response.assertJsonPath('data.title', 'Test Note')
+```
+
+If you need to swap a dependency, the builder makes it explicit:
+
+```typescript
+const module = await Test.createTestingModule({
+  imports: [OrdersModule],
+})
+  .overrideProvider(PAYMENT_TOKEN)
+  .useValue(mockPaymentService)
+  .compile()
+```
+
+There's also built-in support for mocking external HTTP calls, asserting against storage operations, and faking email delivery. Writing tests should be the easy part of the process.
+
+## Built for how AI agents write code
+
+AI coding agents like Cursor and Claude Code are becoming a real part of the development workflow. The more structured your codebase is, the better they perform. Stratal's conventions give AI agents clear patterns to follow when generating new endpoints, services, and consumers.
+
+When an agent sees a `@Controller` with method names like `create`, `show`, and `update`, it understands the routing convention immediately. When it sees a `@Module` definition listing providers, controllers, and consumers, it knows exactly where to register new components. Decorators, typed schemas, and a consistent file structure mean the agent spends less time guessing and more time producing working code.
+
+The OpenAPI integration takes this further. Because Stratal generates a machine-readable spec directly from your route definitions, AI agents have an always-accurate contract to code against. An agent building a client library, writing integration tests, or scaffolding a new service can read the spec and produce code that matches your actual API, not a stale version of it.
+
+This combination of conventions, module structure, and generated specs makes it practical to go from an AI-generated prototype to maintainable production code. The framework provides enough guardrails that AI-written code follows the same patterns as human-written code, and the module system keeps everything organized as the codebase grows.
+
+## Where to go from here
+
+Stratal is opinionated by design. It makes choices about how to structure Workers so you can spend your time on what your application actually does. If that resonates with how you like to build, the best next step is to try it.
+
+Head to the [installation guide](/getting-started/installation/) and scaffold your first Worker with `npm create stratal my-app`. It takes about five minutes.

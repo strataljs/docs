@@ -24,6 +24,12 @@ export default defineConfig({
             customCss: ['./src/styles/custom.css'],
             sidebar: [
                 {
+                    label: 'Introduction',
+                    items: [
+                        { label: 'Why Stratal', slug: 'why-stratal' },
+                    ],
+                },
+                {
                     label: 'Getting Started',
                     items: [
                         { label: 'Installation', slug: 'getting-started/installation' },
@@ -51,6 +57,7 @@ export default defineConfig({
                         { label: 'Dependency Injection', slug: 'core-concepts/dependency-injection' },
                         { label: 'Providers', slug: 'core-concepts/providers' },
                         { label: 'Lifecycle Hooks', slug: 'core-concepts/lifecycle-hooks' },
+                        { label: 'Configuration', slug: 'core-concepts/configuration' },
                     ],
                 },
                 {
@@ -86,6 +93,7 @@ export default defineConfig({
                 },
                 {
                     label: 'API Reference',
+                    attrs: { target: '_blank' },
                     link: 'https://api-reference.stratal.dev',
                 },
             ],
