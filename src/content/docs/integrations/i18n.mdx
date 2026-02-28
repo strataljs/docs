@@ -20,7 +20,7 @@ You do not need to import the module for basic i18n support to work.
 
 ## Configuration
 
-To add your own translations or support additional locales, call `I18nModule.withRoot()` in your root module:
+To add your own translations or support additional locales, call `I18nModule.forRoot()` in your root module:
 
 ```typescript
 import { Module } from 'stratal'
@@ -37,7 +37,7 @@ const i18nConfig: I18nModuleOptions = {
 }
 
 @Module({
-  imports: [I18nModule.withRoot(i18nConfig)],
+  imports: [I18nModule.forRoot(i18nConfig)],
 })
 export class AppModule {}
 ```

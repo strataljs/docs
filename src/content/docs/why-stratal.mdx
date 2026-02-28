@@ -148,7 +148,7 @@ Stratal's `@Module` decorator eliminates this:
 
 ```typescript
 @Module({
-  imports: [StorageModule.withRoot({ bucket: 'uploads' })],
+  imports: [StorageModule.forRoot({ bucket: 'uploads' })],
   providers: [NotesService],
   controllers: [NotesController],
   consumers: [NotificationConsumer],
@@ -161,7 +161,7 @@ Modules import other modules. Providers are registered globally, so any service 
 
 Dependency injection ties it together. Services declare their dependencies through constructor parameters, and the container resolves them automatically. No manual wiring. No global singletons floating around.
 
-Some modules need runtime configuration. For those, `forRoot` and `forRootAsync` let you create dynamic modules that accept options at registration time. The `StorageModule.withRoot({ bucket: 'uploads' })` call above is an example of this pattern.
+Some modules need runtime configuration. For those, `forRoot` and `forRootAsync` let you create dynamic modules that accept options at registration time. The `StorageModule.forRoot({ bucket: 'uploads' })` call above is an example of this pattern.
 
 The entry point for your entire Worker is a single class:
 

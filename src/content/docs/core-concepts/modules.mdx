@@ -88,16 +88,16 @@ export class AppModule {}
 
 Sometimes a module needs configuration before it can be used. Dynamic modules solve this by exposing static methods that return a `DynamicModule` object.
 
-### Synchronous configuration with withRoot()
+### Synchronous configuration with forRoot()
 
-Use `withRoot()` when you have static configuration values available at import time:
+Use `forRoot()` when you have static configuration values available at import time:
 
 ```typescript
 import { Module, DynamicModule } from 'stratal'
 
 @Module({})
 export class CacheModule {
-  static withRoot(options: { ttl: number }): DynamicModule {
+  static forRoot(options: { ttl: number }): DynamicModule {
     return {
       module: CacheModule,
       providers: [
@@ -113,21 +113,21 @@ Import it with configuration:
 
 ```typescript
 @Module({
-  imports: [CacheModule.withRoot({ ttl: 3600 })],
+  imports: [CacheModule.forRoot({ ttl: 3600 })],
 })
 export class AppModule {}
 ```
 
-### Asynchronous configuration with withRootAsync()
+### Asynchronous configuration with forRootAsync()
 
-Use `withRootAsync()` when the configuration depends on other services that need to be resolved first:
+Use `forRootAsync()` when the configuration depends on other services that need to be resolved first:
 
 ```typescript
 import { Module, DynamicModule, AsyncModuleOptions } from 'stratal'
 
 @Module({})
 export class DatabaseModule {
-  static withRootAsync<TOptions>(
+  static forRootAsync<TOptions>(
     options: AsyncModuleOptions<TOptions>,
   ): DynamicModule {
     return {
@@ -150,7 +150,7 @@ Import it with an async factory:
 ```typescript
 @Module({
   imports: [
-    DatabaseModule.withRootAsync({
+    DatabaseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         connectionString: config.get('DATABASE_URL'),
