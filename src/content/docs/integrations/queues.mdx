@@ -46,7 +46,9 @@ The binding name must be the UPPER_SNAKE_CASE version of the queue name. Stratal
 Import `QueueModule` in your root module and call `forRootAsync` to configure the provider, then call `registerQueue` for each queue your application uses:
 
 ```typescript
-import { Module, DI_TOKENS, type StratalEnv } from 'stratal'
+import { Module } from 'stratal/module'
+import { DI_TOKENS } from 'stratal/di'
+import type { StratalEnv } from 'stratal'
 import { QueueModule } from 'stratal/queue'
 
 @Module({
@@ -80,7 +82,7 @@ See the [Environment Typing — Typing queue bindings](/guides/environment-typin
 Inject a queue sender using the queue name as the injection token:
 
 ```typescript
-import { Transient } from 'stratal'
+import { Transient } from 'stratal/di'
 import { InjectQueue, type IQueueSender } from 'stratal/queue'
 
 @Transient()
@@ -111,7 +113,7 @@ The `dispatch` method accepts a `DispatchMessage` object. You provide `type`, `p
 Create a consumer class that implements the `IQueueConsumer` interface:
 
 ```typescript
-import { Transient } from 'stratal'
+import { Transient } from 'stratal/di'
 import type { IQueueConsumer, QueueMessage } from 'stratal/queue'
 
 interface WelcomePayload {
@@ -158,7 +160,7 @@ Stratal resolves each consumer from the DI container and indexes it by its decla
 A single consumer can handle multiple message types by listing them in its `messageTypes` array. Use a `switch` on `message.type` to branch logic:
 
 ```typescript
-import { Transient } from 'stratal'
+import { Transient } from 'stratal/di'
 import type { IQueueConsumer, QueueMessage } from 'stratal/queue'
 
 @Transient()
@@ -190,7 +192,7 @@ export class OrderEventsConsumer implements IQueueConsumer {
 Use `'*'` to match every message type. This is useful for cross-cutting concerns like audit logging:
 
 ```typescript
-import { Transient } from 'stratal'
+import { Transient } from 'stratal/di'
 import type { IQueueConsumer, QueueMessage } from 'stratal/queue'
 
 @Transient()
@@ -258,7 +260,7 @@ To handle queue messages in production, your worker class must extend `StratalWo
 
 ```typescript
 import 'reflect-metadata'
-import { StratalWorker } from 'stratal'
+import { StratalWorker } from 'stratal/worker'
 import { AppModule } from './app.module'
 
 export default class Worker extends StratalWorker {
@@ -286,7 +288,8 @@ The sync provider processes messages synchronously, so you can write integration
 
 ```typescript
 import { Test, type TestingModule } from '@stratal/testing'
-import { QueueModule, DI_TOKENS, QUEUE_TOKENS } from 'stratal'
+import { DI_TOKENS } from 'stratal/di'
+import { QueueModule, QUEUE_TOKENS } from 'stratal/queue'
 import type { IQueueConsumer, ConsumerRegistry, QueueRegistry } from 'stratal/queue'
 
 describe('Queue Integration', () => {

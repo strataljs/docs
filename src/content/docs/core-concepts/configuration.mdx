@@ -78,7 +78,7 @@ export type EmailConfig = ReturnType<typeof emailConfig.factory>
 Import `ConfigModule` in your root module (or a shared `CoreModule`) and call `forRoot()` with your namespaces:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { ConfigModule } from 'stratal/config'
 import { databaseConfig, emailConfig, storageConfig } from '../config'
 
@@ -110,7 +110,8 @@ Inject `ConfigService` into any provider using `CONFIG_TOKENS.ConfigService`:
 
 ```typescript
 import { inject } from 'tsyringe'
-import { Transient, CONFIG_TOKENS, type IConfigService } from 'stratal'
+import { Transient } from 'stratal/di'
+import { CONFIG_TOKENS, type IConfigService } from 'stratal/config'
 
 @Transient()
 export class MyService {
@@ -242,7 +243,7 @@ this.config.reset()
 Framework modules like `StorageModule` and `EmailModule` use `forRootAsync` to receive their options from config namespaces. Pass the namespace's `KEY` token in the `inject` array:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { ConfigModule } from 'stratal/config'
 import { StorageModule } from 'stratal/storage'
 import { EmailModule } from 'stratal/email'
@@ -285,7 +286,8 @@ For application-specific helpers like `isDevelopment()`, create a wrapper servic
 
 ```typescript
 import { inject } from 'tsyringe'
-import { Transient, CONFIG_TOKENS, type IConfigService } from 'stratal'
+import { Transient } from 'stratal/di'
+import { CONFIG_TOKENS, type IConfigService } from 'stratal/config'
 
 @Transient()
 export class AppConfigService {
@@ -359,7 +361,7 @@ Use `ConfigModule.forRoot()` inside `Test.createTestingModule` to load config in
 
 ```typescript
 import { Test, type TestingModule } from '@stratal/testing'
-import { CONFIG_TOKENS, type IConfigService } from 'stratal'
+import { CONFIG_TOKENS, type IConfigService } from 'stratal/config'
 import { ConfigModule } from 'stratal/config'
 import { databaseConfig, emailConfig } from '../config'
 

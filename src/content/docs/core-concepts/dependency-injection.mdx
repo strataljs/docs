@@ -12,7 +12,7 @@ Dependency injection (DI) is a design pattern where classes receive their depend
 To make a class available for injection, decorate it with `@Transient()`:
 
 ```typescript
-import { Transient } from 'stratal'
+import { Transient } from 'stratal/di'
 
 @Transient()
 export class UsersService {
@@ -25,7 +25,8 @@ export class UsersService {
 Now you can inject `UsersService` into any other injectable class via constructor injection:
 
 ```typescript
-import { Controller, IController, inject, Route, RouterContext } from 'stratal'
+import { Controller, IController, Route, RouterContext } from 'stratal/router'
+import { inject } from 'stratal/di'
 import { UsersService } from './users.service'
 
 @Controller('/api/users')
@@ -46,7 +47,7 @@ The `@inject()` decorator tells the container which dependency to resolve for ea
 Injectable classes must be registered in a module's `providers` array before they can be resolved:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { UsersController } from './users.controller'
 import { UsersService } from './users.service'
 
@@ -72,7 +73,8 @@ Scopes control how often a new instance is created when a dependency is resolved
 Set the scope when registering a provider:
 
 ```typescript
-import { Module, Scope } from 'stratal'
+import { Module } from 'stratal/module'
+import { Scope } from 'stratal/di'
 
 @Module({
   providers: [
@@ -112,7 +114,7 @@ export class UsersModule {}
 Then inject it using `@inject`:
 
 ```typescript
-import { inject } from 'stratal'
+import { inject } from 'stratal/di'
 
 @Transient()
 export class UsersService {
@@ -127,7 +129,7 @@ export class UsersService {
 Stratal provides a `DI_TOKENS` object with pre-defined tokens for framework services:
 
 ```typescript
-import { DI_TOKENS } from 'stratal'
+import { DI_TOKENS } from 'stratal/di'
 ```
 
 Commonly used tokens include:
@@ -176,7 +178,7 @@ Stratal supports two styles of injection:
 **Constructor injection** resolves dependencies when the class is instantiated. Use it for dependencies your class always needs:
 
 ```typescript
-import { Transient, inject } from 'stratal'
+import { Transient, inject } from 'stratal/di'
 
 @Transient()
 export class OrdersService {
@@ -190,7 +192,7 @@ export class OrdersService {
 **`@InjectParam`** resolves dependencies at the method level, directly in route handler parameters. Use it when a dependency is only needed for a specific route:
 
 ```typescript
-import { InjectParam } from 'stratal'
+import { InjectParam } from 'stratal/di'
 
 @Controller('/api/orders')
 export class OrdersController implements IController {
@@ -216,7 +218,7 @@ export class OrdersController implements IController {
 Cloudflare Workers receive environment bindings (KV namespaces, D1 databases, secrets, etc.) through the `env` object. Stratal registers this object in the container so you can inject it into any service:
 
 ```typescript
-import { Transient, inject, DI_TOKENS } from 'stratal'
+import { Transient, inject, DI_TOKENS } from 'stratal/di'
 
 @Transient()
 export class StorageService {

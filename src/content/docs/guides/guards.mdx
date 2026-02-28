@@ -12,7 +12,8 @@ Guards determine whether a request should be allowed to proceed to the route han
 Every guard implements the `CanActivate` interface with a single method:
 
 ```typescript
-import { CanActivate, RouterContext } from 'stratal'
+import { CanActivate } from 'stratal/guards'
+import { RouterContext } from 'stratal/router'
 
 export class AuthGuard implements CanActivate {
   canActivate(context: RouterContext): boolean | Promise<boolean> {
@@ -35,7 +36,7 @@ The `@UseGuards` decorator attaches guards to controllers or individual methods.
 Apply a guard to every route in a controller:
 
 ```typescript
-import { Controller, IController, UseGuards, Route, RouterContext } from 'stratal'
+import { Controller, IController, UseGuards, Route, RouterContext } from 'stratal/router'
 import { z } from 'stratal/validation'
 import { AuthGuard } from './auth.guard'
 
@@ -127,7 +128,9 @@ graph TD
 Guard classes are resolved from the request-scoped DI container. This means you can inject services into your guards just like any other provider:
 
 ```typescript
-import { CanActivate, RouterContext, Transient, inject, DI_TOKENS } from 'stratal'
+import { CanActivate } from 'stratal/guards'
+import { RouterContext } from 'stratal/router'
+import { Transient, inject, DI_TOKENS } from 'stratal/di'
 import type { StratalEnv } from 'stratal'
 
 @Transient()
@@ -152,7 +155,8 @@ export class ApiKeyGuard implements CanActivate {
 Sometimes you need to configure a guard with options at decoration time. A guard factory is a function that returns a guard instance:
 
 ```typescript
-import { CanActivate, RouterContext } from 'stratal'
+import { CanActivate } from 'stratal/guards'
+import { RouterContext } from 'stratal/router'
 
 function RoleGuard(...roles: string[]): CanActivate {
   return {
@@ -187,7 +191,9 @@ Guard instances (objects with a `canActivate` method) are used directly, while g
 Here is a more complete authentication guard that validates a JWT and sets the auth context for downstream services:
 
 ```typescript
-import { CanActivate, RouterContext, Transient, inject, DI_TOKENS } from 'stratal'
+import { CanActivate } from 'stratal/guards'
+import { RouterContext } from 'stratal/router'
+import { Transient, inject, DI_TOKENS } from 'stratal/di'
 
 @Transient()
 export class AuthGuard implements CanActivate {
@@ -228,7 +234,8 @@ Services downstream can then inject `DI_TOKENS.AuthContext` to access the authen
 Building on the authentication guard, a permission guard checks whether the authenticated user has the required scopes:
 
 ```typescript
-import { CanActivate, RouterContext } from 'stratal'
+import { CanActivate } from 'stratal/guards'
+import { RouterContext } from 'stratal/router'
 
 function PermissionGuard(...requiredScopes: string[]): CanActivate {
   return {

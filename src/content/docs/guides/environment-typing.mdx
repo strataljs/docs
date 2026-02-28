@@ -78,7 +78,7 @@ Import the declaration file early in your worker entry point:
 // src/index.ts
 import 'reflect-metadata'
 import './types/env'
-import { StratalWorker } from 'stratal'
+import { StratalWorker } from 'stratal/worker'
 import { AppModule } from './app.module'
 
 export default class Worker extends StratalWorker {
@@ -136,7 +136,7 @@ This merged type is used everywhere: the DI container, the Hono router bindings,
 Use `DI_TOKENS.CloudflareEnv` to inject the typed environment into any service:
 
 ```typescript
-import { Transient, inject, DI_TOKENS } from 'stratal'
+import { Transient, inject, DI_TOKENS } from 'stratal/di'
 import type { StratalEnv } from 'stratal'
 
 @Transient()
@@ -162,7 +162,7 @@ The environment is registered as a singleton value in the global DI container. I
 Cloudflare's `ExecutionContext` is also available through DI. This is useful for `waitUntil` calls or other runtime APIs:
 
 ```typescript
-import { Transient, inject, DI_TOKENS } from 'stratal'
+import { Transient, inject, DI_TOKENS } from 'stratal/di'
 
 @Transient()
 export class BackgroundTaskService {
@@ -316,7 +316,7 @@ import 'reflect-metadata'
 import './types/env'
 import './types/queues'
 import './types/storage'
-import { StratalWorker } from 'stratal'
+import { StratalWorker } from 'stratal/worker'
 import { AppModule } from './app.module'
 
 export default class Worker extends StratalWorker {

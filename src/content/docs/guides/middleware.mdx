@@ -12,7 +12,9 @@ Middleware runs before guards and route handlers. It can inspect or modify the r
 A middleware class implements the `Middleware` interface with a single `handle` method:
 
 ```typescript
-import { Middleware, RouterContext, Transient } from 'stratal'
+import { Middleware } from 'stratal/middleware'
+import { RouterContext } from 'stratal/router'
+import { Transient } from 'stratal/di'
 
 @Transient()
 export class LoggingMiddleware implements Middleware {
@@ -39,7 +41,8 @@ Call `next()` to pass control to the next middleware in the chain (or the route 
 Modules register middleware by implementing the `MiddlewareConfigurable` interface. This gives you a `configure` method with access to the `MiddlewareConsumer`:
 
 ```typescript
-import { Module, MiddlewareConfigurable, MiddlewareConsumer } from 'stratal'
+import { Module } from 'stratal/module'
+import { MiddlewareConfigurable, MiddlewareConsumer } from 'stratal/middleware'
 import { LoggingMiddleware } from './logging.middleware'
 import { UsersController } from './users.controller'
 
@@ -175,7 +178,9 @@ export class AppModule implements MiddlewareConfigurable {
 Middleware classes are resolved from the request-scoped DI container, so you can inject services:
 
 ```typescript
-import { Middleware, RouterContext, Transient, inject } from 'stratal'
+import { Middleware } from 'stratal/middleware'
+import { RouterContext } from 'stratal/router'
+import { Transient, inject } from 'stratal/di'
 import { LOGGER_TOKENS, type LoggerService } from 'stratal/logger'
 
 @Transient()

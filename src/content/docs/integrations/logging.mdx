@@ -13,7 +13,7 @@ Configure logging in the `configure()` method of your worker:
 
 ```typescript
 import 'reflect-metadata'
-import { StratalWorker } from 'stratal'
+import { StratalWorker } from 'stratal/worker'
 import { AppModule } from './app.module'
 
 export default class Worker extends StratalWorker {
@@ -52,7 +52,7 @@ The configured level acts as a minimum threshold. A level of `info` outputs info
 Inject `LoggerService` using the `LOGGER_TOKENS.LoggerService` token:
 
 ```typescript
-import { Transient, inject } from 'stratal'
+import { Transient, inject } from 'stratal/di'
 import { LOGGER_TOKENS, type LoggerService } from 'stratal/logger'
 
 @Transient()

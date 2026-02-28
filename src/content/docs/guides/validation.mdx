@@ -12,7 +12,7 @@ Stratal validates incoming requests automatically using [Zod](https://zod.dev) s
 The `@Route` decorator accepts Zod schemas for three parts of a request: `body`, `params`, and `query`. Import `z` from `stratal/validation` to define your schemas.
 
 ```typescript
-import { Controller, IController, Route, RouterContext } from 'stratal'
+import { Controller, IController, Route, RouterContext } from 'stratal/router'
 import { z } from 'stratal/validation'
 
 const createUserSchema = z.object({

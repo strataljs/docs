@@ -22,7 +22,7 @@ Register the `StorageModule` in your root module using `forRoot` or `forRootAsyn
 <Tabs>
   <TabItem label="Static">
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { StorageModule } from 'stratal/storage'
 
 @Module({
@@ -54,7 +54,7 @@ export class AppModule {}
   </TabItem>
   <TabItem label="Async">
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { StorageModule } from 'stratal/storage'
 
 @Module({
@@ -150,7 +150,7 @@ const disks = this.storage.getAvailableDisks()
 Inject `StorageService` and call `upload` with the file content, a relative path, and upload options:
 
 ```typescript
-import { Transient, inject } from 'stratal'
+import { Transient, inject } from 'stratal/di'
 import { STORAGE_TOKENS, type StorageService } from 'stratal/storage'
 
 @Transient()

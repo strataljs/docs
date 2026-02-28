@@ -10,7 +10,7 @@ In this guide you will build a Stratal worker with a single `GET /api/hello` end
 Controllers handle incoming requests. Create `src/hello.controller.ts`:
 
 ```typescript
-import { Controller, IController, Route, RouterContext } from 'stratal'
+import { Controller, IController, Route, RouterContext } from 'stratal/router'
 import { z } from 'stratal/validation'
 
 @Controller('/api/hello')
@@ -48,7 +48,7 @@ A few things to note:
 Every Stratal application has a **root module** that declares which controllers (and later, providers) belong to the app. Create `src/app.module.ts`:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { HelloController } from './hello.controller'
 
 @Module({
@@ -71,7 +71,7 @@ The entry point is the file Wrangler invokes when a request arrives. Create `src
 
 ```typescript
 import 'reflect-metadata'
-import { StratalWorker } from 'stratal'
+import { StratalWorker } from 'stratal/worker'
 import { AppModule } from './app.module'
 
 export default class Worker extends StratalWorker {
@@ -129,7 +129,7 @@ Real applications rarely put business logic directly in controllers. Stratal use
 Create `src/hello.service.ts`:
 
 ```typescript
-import { Transient } from 'stratal'
+import { Transient } from 'stratal/di'
 
 @Transient()
 export class HelloService {
@@ -144,7 +144,7 @@ export class HelloService {
 Now update the controller to use the service. Replace the contents of `src/hello.controller.ts`:
 
 ```typescript
-import { Controller, IController, Route, RouterContext } from 'stratal'
+import { Controller, IController, Route, RouterContext } from 'stratal/router'
 import { z } from 'stratal/validation'
 import { HelloService } from './hello.service'
 
@@ -165,7 +165,7 @@ export class HelloController implements IController {
 Register the service as a provider in `src/app.module.ts`:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { HelloController } from './hello.controller'
 import { HelloService } from './hello.service'
 

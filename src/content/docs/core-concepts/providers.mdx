@@ -12,7 +12,7 @@ Providers are the building blocks of Stratal's dependency injection system. A pr
 The simplest way to register a provider is to list the class directly in the `providers` array:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { UsersService } from './users.service'
 
 @Module({
@@ -28,7 +28,8 @@ This is shorthand for `{ provide: UsersService, useClass: UsersService }`. The c
 A `ClassProvider` maps a token to a class. Use it when the token differs from the class, or when you need to set a specific scope:
 
 ```typescript
-import { Module, Scope } from 'stratal'
+import { Module } from 'stratal/module'
+import { Scope } from 'stratal/di'
 
 @Module({
   providers: [
@@ -161,7 +162,7 @@ This reads as: "When the environment is development, use `PrettyFormatter` for t
 The predicate receives a container reference so you can resolve other services to make the decision. You typically call this inside a module's `onInitialize` lifecycle hook:
 
 ```typescript
-import { Module, ModuleContext } from 'stratal'
+import { Module, ModuleContext } from 'stratal/module'
 
 @Module({ providers: [PrettyFormatter, JsonFormatter] })
 export class LoggingModule {
@@ -184,7 +185,7 @@ export class LoggingModule {
 The `extend()` method wraps an existing service with a decorator. This is useful for adding cross-cutting concerns like logging or caching without modifying the original service:
 
 ```typescript
-import { Module, ModuleContext } from 'stratal'
+import { Module, ModuleContext } from 'stratal/module'
 
 @Module({ providers: [UsersService] })
 export class UsersModule {

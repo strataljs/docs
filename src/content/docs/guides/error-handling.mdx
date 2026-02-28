@@ -35,7 +35,7 @@ All errors returned by Stratal follow this structure:
 All custom errors extend the `ApplicationError` base class. It ties together a message key for i18n, a numeric error code, and optional metadata:
 
 ```typescript
-import { ApplicationError, ERROR_CODES } from 'stratal'
+import { ApplicationError, ERROR_CODES } from 'stratal/errors'
 
 export class InsufficientBalanceError extends ApplicationError {
   constructor(balance: number, required: number) {
@@ -82,7 +82,7 @@ Stratal organizes error codes by category, with each range mapping to an HTTP st
 Access them through the `ERROR_CODES` object:
 
 ```typescript
-import { ERROR_CODES } from 'stratal'
+import { ERROR_CODES } from 'stratal/errors'
 
 ERROR_CODES.VALIDATION.GENERIC         // 1000
 ERROR_CODES.VALIDATION.REQUIRED_FIELD  // 1001
@@ -124,7 +124,7 @@ A few error codes within the database range have specific status overrides:
 Define errors by extending `ApplicationError`:
 
 ```typescript
-import { ApplicationError, ERROR_CODES } from 'stratal'
+import { ApplicationError, ERROR_CODES } from 'stratal/errors'
 
 export class UserNotFoundError extends ApplicationError {
   constructor(userId: string) {
@@ -330,7 +330,7 @@ export class UsersController implements IController {
 Use the `isApplicationError` type guard when you need to distinguish framework errors from unexpected ones:
 
 ```typescript
-import { isApplicationError } from 'stratal'
+import { isApplicationError } from 'stratal/errors'
 
 try {
   await someOperation()

@@ -12,7 +12,7 @@ Lifecycle hooks let modules run code at specific points during the application l
 The `OnInitialize` interface defines an `onInitialize()` method that runs after all of a module's providers have been registered in the DI container. Implement it directly on your module class:
 
 ```typescript
-import { Module, OnInitialize, ModuleContext } from 'stratal'
+import { Module, OnInitialize, ModuleContext } from 'stratal/module'
 
 @Module({
   providers: [CacheService],
@@ -56,7 +56,7 @@ Common use cases for `onInitialize`:
 The `OnShutdown` interface defines an `onShutdown()` method that runs when the application is shutting down:
 
 ```typescript
-import { Module, OnShutdown, ModuleContext } from 'stratal'
+import { Module, OnShutdown, ModuleContext } from 'stratal/module'
 
 @Module({
   providers: [DatabaseService],
@@ -128,7 +128,7 @@ This means leaf modules (those with no imports) initialize first, and the root m
 A module can implement both `OnInitialize` and `OnShutdown`:
 
 ```typescript
-import { Module, OnInitialize, OnShutdown, ModuleContext } from 'stratal'
+import { Module, OnInitialize, OnShutdown, ModuleContext } from 'stratal/module'
 
 @Module({
   providers: [ConnectionPool],

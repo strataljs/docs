@@ -12,7 +12,7 @@ Modules are the primary way you organize a Stratal application. A module groups 
 The `@Module` decorator marks a class as a Stratal module and accepts a `ModuleOptions` object:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 
 @Module({
   imports: [],
@@ -40,7 +40,7 @@ The root module is the entry point of your module tree. You pass it to `StratalW
 
 ```typescript
 import 'reflect-metadata'
-import { StratalWorker } from 'stratal'
+import { StratalWorker } from 'stratal/worker'
 import { AppModule } from './app.module'
 
 export default class Worker extends StratalWorker {
@@ -57,7 +57,7 @@ There is nothing structurally special about the root module. It is simply the mo
 As your application grows, you should split related functionality into **feature modules**. Each feature module encapsulates its own controllers and providers, then gets imported into the root module (or another feature module).
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { UsersController } from './users.controller'
 import { UsersService } from './users.service'
 
@@ -71,7 +71,7 @@ export class UsersModule {}
 Import it into your root module:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { UsersModule } from './users/users.module'
 
 @Module({
@@ -93,7 +93,7 @@ Sometimes a module needs configuration before it can be used. Dynamic modules so
 Use `forRoot()` when you have static configuration values available at import time:
 
 ```typescript
-import { Module, DynamicModule } from 'stratal'
+import { Module, DynamicModule } from 'stratal/module'
 
 @Module({})
 export class CacheModule {
@@ -123,7 +123,7 @@ export class AppModule {}
 Use `forRootAsync()` when the configuration depends on other services that need to be resolved first:
 
 ```typescript
-import { Module, DynamicModule, AsyncModuleOptions } from 'stratal'
+import { Module, DynamicModule, AsyncModuleOptions } from 'stratal/module'
 
 @Module({})
 export class DatabaseModule {
@@ -172,7 +172,8 @@ The `inject` array tells Stratal which dependencies to resolve and pass to `useF
 Modules can configure middleware by implementing the `MiddlewareConfigurable` interface. Define a `configure()` method that receives a `MiddlewareConsumer`:
 
 ```typescript
-import { Module, MiddlewareConfigurable, MiddlewareConsumer } from 'stratal'
+import { Module } from 'stratal/module'
+import { MiddlewareConfigurable, MiddlewareConsumer } from 'stratal/middleware'
 import { LoggingMiddleware } from './logging.middleware'
 
 @Module({

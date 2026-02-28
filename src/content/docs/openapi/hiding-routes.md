@@ -84,9 +84,11 @@ For more dynamic control, use the `OpenAPIConfigService` to apply a custom route
 Inject the config service in a middleware and call `override()` with a `routeFilter` function:
 
 ```typescript
-import { inject } from 'stratal'
-import { Middleware, MiddlewareHandler, RouterContext, OPENAPI_TOKENS } from 'stratal'
-import type { IOpenAPIConfigService } from 'stratal'
+import { inject } from 'stratal/di'
+import { Middleware, MiddlewareHandler } from 'stratal/middleware'
+import { RouterContext } from 'stratal/router'
+import { OPENAPI_TOKENS } from 'stratal/openapi'
+import type { IOpenAPIConfigService } from 'stratal/openapi'
 
 @Middleware()
 export class DocsFilterMiddleware implements MiddlewareHandler {

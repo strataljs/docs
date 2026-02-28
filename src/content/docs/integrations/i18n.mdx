@@ -23,7 +23,7 @@ You do not need to import the module for basic i18n support to work.
 To add your own translations or support additional locales, call `I18nModule.forRoot()` in your root module:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { I18nModule } from 'stratal/i18n'
 import type { I18nModuleOptions } from 'stratal/i18n'
 import * as en from './messages/en'
@@ -92,7 +92,7 @@ Your application messages are deep-merged with the built-in system messages. If 
 Inject `I18nService` and call `t()` with a message key:
 
 ```typescript
-import { Transient, inject } from 'stratal'
+import { Transient, inject } from 'stratal/di'
 import { I18N_TOKENS, type II18nService } from 'stratal/i18n'
 
 @Transient()
@@ -136,7 +136,7 @@ i18n.t('common.notifications', { name: 'Alice', count: 5 })
 Error classes use message keys that `GlobalErrorHandler` translates at response time:
 
 ```typescript
-import { ApplicationError, ERROR_CODES } from 'stratal'
+import { ApplicationError, ERROR_CODES } from 'stratal/errors'
 
 export class UserNotFoundError extends ApplicationError {
   constructor(userId: string) {

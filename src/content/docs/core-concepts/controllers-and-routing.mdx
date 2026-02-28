@@ -12,7 +12,7 @@ Controllers are where you handle HTTP requests. Each controller is a class decor
 Decorate a class with `@Controller` and implement the `IController` interface:
 
 ```typescript
-import { Controller, IController, Route, RouterContext } from 'stratal'
+import { Controller, IController, Route, RouterContext } from 'stratal/router'
 import { z } from 'stratal/validation'
 
 @Controller('/api/users')
@@ -74,7 +74,7 @@ For a controller at `/api/users`, defining `show()` automatically registers `GET
 The `@Route` decorator configures individual route methods. It accepts a `RouteConfig` object:
 
 ```typescript
-import { Controller, IController, Route, RouterContext } from 'stratal'
+import { Controller, IController, Route, RouterContext } from 'stratal/router'
 import { z } from 'stratal/validation'
 
 @Controller('/api/users')
@@ -190,7 +190,7 @@ const service = container.resolve(MyService)
 If the six convention-based methods do not fit your needs, you can implement `handle()` for full control over routing. When `handle()` is defined, it receives all requests that match the controller's base path and Stratal skips convention-based routing for that controller.
 
 ```typescript
-import { Controller, IController, RouterContext } from 'stratal'
+import { Controller, IController, RouterContext } from 'stratal/router'
 
 @Controller('/api/health')
 export class HealthController implements IController {
@@ -209,7 +209,7 @@ export class HealthController implements IController {
 Guards control whether a request is allowed to proceed. Apply them at the controller level or on individual methods using the `@UseGuards` decorator:
 
 ```typescript
-import { Controller, IController, UseGuards, Route, RouterContext } from 'stratal'
+import { Controller, IController, UseGuards, Route, RouterContext } from 'stratal/router'
 import { AuthGuard } from './auth.guard'
 import { RolesGuard } from './roles.guard'
 

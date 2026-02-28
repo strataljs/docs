@@ -48,9 +48,11 @@ The `OpenAPIConfigService` is request-scoped, which means you can change the doc
 Here is a middleware that overrides the spec title based on a request header:
 
 ```typescript
-import { inject } from 'stratal'
-import { Middleware, MiddlewareHandler, RouterContext, OPENAPI_TOKENS } from 'stratal'
-import type { IOpenAPIConfigService } from 'stratal'
+import { inject } from 'stratal/di'
+import { Middleware, MiddlewareHandler } from 'stratal/middleware'
+import { RouterContext } from 'stratal/router'
+import { OPENAPI_TOKENS } from 'stratal/openapi'
+import type { IOpenAPIConfigService } from 'stratal/openapi'
 
 @Middleware()
 export class EnvironmentDocsMiddleware implements MiddlewareHandler {

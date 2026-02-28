@@ -64,7 +64,7 @@ my-worker/
 The feature module registers its own controller and service:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { NotesController } from './notes.controller'
 import { NotesService } from './notes.service'
 
@@ -78,7 +78,7 @@ export class NotesModule {}
 Then the root module imports it:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { NotesModule } from './notes/notes.module'
 
 @Module({
@@ -129,7 +129,7 @@ my-worker/
 Each directory is a self-contained module. The root module composes them together:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { GuardsModule } from './guards/guards.module'
 import { JobsModule } from './jobs/jobs.module'
 import { MiddlewareModule } from './middleware/middleware.module'

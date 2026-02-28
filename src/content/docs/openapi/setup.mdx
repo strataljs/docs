@@ -14,7 +14,8 @@ To customize the spec metadata, endpoint paths, or security schemes, re-register
 To override the default options, import `OpenAPIModule` from `stratal` and call `forRoot()` in your root module's `imports` array:
 
 ```typescript
-import { Module, OpenAPIModule } from 'stratal'
+import { Module } from 'stratal/module'
+import { OpenAPIModule } from 'stratal/openapi'
 import { UsersModule } from './users/users.module'
 
 @Module({
@@ -73,7 +74,8 @@ OpenAPIModule.forRoot({
 When your OpenAPI options depend on runtime values (environment variables, config services, etc.), use `forRootAsync()` with a factory function:
 
 ```typescript
-import { Module, OpenAPIModule } from 'stratal'
+import { Module } from 'stratal/module'
+import { OpenAPIModule } from 'stratal/openapi'
 import { ConfigService, CONFIG_TOKENS } from './config'
 
 @Module({

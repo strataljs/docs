@@ -32,7 +32,7 @@ The `CACHE` binding is expected by default. It is declared in the `StratalEnv` i
 The `CacheModule` is auto-registered as a core module, so you do not need to import it manually. The `CacheService` is available for injection right away:
 
 ```typescript
-import { Transient, inject } from 'stratal'
+import { Transient, inject } from 'stratal/di'
 import { CACHE_TOKENS, type CacheService } from 'stratal/cache'
 
 @Transient()
@@ -210,7 +210,7 @@ do {
 By default, `CacheService` uses the `CACHE` binding. To work with additional KV namespaces, use the `withBinding` method:
 
 ```typescript
-import { Transient, inject, DI_TOKENS } from 'stratal'
+import { Transient, inject, DI_TOKENS } from 'stratal/di'
 import { CACHE_TOKENS, type CacheService } from 'stratal/cache'
 
 @Transient()

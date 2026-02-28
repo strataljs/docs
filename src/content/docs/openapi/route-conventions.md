@@ -36,7 +36,7 @@ You only implement the methods your resource needs. If you only need listing and
 Here is a controller that implements all six conventional methods:
 
 ```typescript
-import { Controller, IController, Route, RouterContext } from 'stratal'
+import { Controller, IController, Route, RouterContext } from 'stratal/router'
 import { z } from 'stratal/validation'
 import {
   createUserSchema,

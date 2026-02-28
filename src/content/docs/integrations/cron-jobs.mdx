@@ -29,7 +29,7 @@ No module import is required for cron support. The `CronManager` is registered a
 A cron job is a class that implements the `CronJob` interface:
 
 ```typescript
-import { Transient, inject } from 'stratal'
+import { Transient, inject } from 'stratal/di'
 import type { CronJob } from 'stratal/cron'
 import { LOGGER_TOKENS, type LoggerService } from 'stratal/logger'
 
@@ -69,7 +69,7 @@ The `ScheduledController` is the standard Cloudflare Workers type that provides 
 Add job classes to the `jobs` array in any module:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { CleanupJob } from './cleanup.job'
 import { ReportJob } from './report.job'
 
@@ -137,7 +137,7 @@ Your worker class needs to extend `StratalWorker`. The `scheduled` method is alr
 
 ```typescript
 import 'reflect-metadata'
-import { StratalWorker } from 'stratal'
+import { StratalWorker } from 'stratal/worker'
 import { AppModule } from './app.module'
 
 export default class Worker extends StratalWorker {

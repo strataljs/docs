@@ -35,7 +35,9 @@ yarn add @react-email/render react
 The `EmailModule` requires the `QueueModule` to be configured first, since emails are dispatched through a queue. Register the queue, then configure the email module:
 
 ```typescript
-import { Module, DI_TOKENS, type StratalEnv } from 'stratal'
+import { Module } from 'stratal/module'
+import { DI_TOKENS } from 'stratal/di'
+import type { StratalEnv } from 'stratal'
 import { QueueModule } from 'stratal/queue'
 import { EmailModule } from 'stratal/email'
 
@@ -120,7 +122,7 @@ EmailModule.forRoot({
 Inject `EmailService` and call `send`:
 
 ```typescript
-import { Transient, inject } from 'stratal'
+import { Transient, inject } from 'stratal/di'
 import { EMAIL_TOKENS, type EmailService } from 'stratal/email'
 
 @Transient()
