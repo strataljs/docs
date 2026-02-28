@@ -17,7 +17,10 @@ export default defineConfig({
             editLink: { baseUrl: 'https://github.com/strataljs/stratal' },
             logo: { src: './src/assets/logo.webp', alt: 'Stratal Logo' },
             tagline: 'A modular Cloudflare Workers framework with automatic OpenAPI documentation, dependency injection, queue consumers, cron jobs, and type-safe configuration.',
-            social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/strataljs/stratal' }],
+            social: [
+                { icon: 'github', label: 'GitHub', href: 'https://github.com/strataljs/stratal' },
+                { icon: 'open-book', label: 'API Reference', href: 'https://api-reference.stratal.dev' },
+            ],
             customCss: ['./src/styles/custom.css'],
             sidebar: [
                 {
@@ -82,14 +85,8 @@ export default defineConfig({
                     ],
                 },
                 {
-                    label: 'Reference',
-                    items: [
-                        { label: 'Configuration', slug: 'reference/configuration' },
-                        { label: 'DI Tokens', slug: 'reference/di-tokens' },
-                        { label: 'Error Codes', slug: 'reference/error-codes' },
-                        { label: 'Sub-path Exports', slug: 'reference/sub-path-exports' },
-                        { label: 'Examples', slug: 'reference/examples' },
-                    ],
+                    label: 'API Reference',
+                    link: 'https://api-reference.stratal.dev',
                 },
             ],
         }),
