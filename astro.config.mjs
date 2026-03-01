@@ -8,6 +8,7 @@ import starlightClientMermaid from '@pasqal-io/starlight-client-mermaid'
 
 // https://astro.build/config
 export default defineConfig({
+    site: 'https://stratal.dev',
     integrations: [
         starlight({
             plugins: [starlightThemeNext(), starlightClientMermaid()],
