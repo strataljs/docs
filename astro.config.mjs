@@ -15,7 +15,7 @@ export default defineConfig({
             favicon: '/favicon.ico',
             title: 'Stratal',
             description: 'Stratal is a type-safe, modular framework purpose-built for Cloudflare Workers. Build scalable edge applications with dependency injection, automatic OpenAPI docs, and first-class support for Workers primitives.',
-            editLink: { baseUrl: 'https://github.com/strataljs/stratal' },
+            editLink: { baseUrl: 'https://github.com/strataljs/docs/edit/main/' },
             logo: { src: './src/assets/logo.webp', alt: 'Stratal Logo' },
             tagline: 'A modular Cloudflare Workers framework with automatic OpenAPI documentation, dependency injection, queue consumers, cron jobs, and type-safe configuration.',
             social: [

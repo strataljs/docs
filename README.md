@@ -1,49 +1,36 @@
-# Starlight Starter Kit: Basics
+# Stratal Documentation
 
 [![Built with Starlight](https://astro.badg.es/v2/built-with-starlight/tiny.svg)](https://starlight.astro.build)
 
-```
-yarn create astro@latest -- --template starlight
-```
+The official documentation site for [Stratal](https://github.com/strataljs/stratal) — a type-safe, modular framework purpose-built for Cloudflare Workers. Built with [Astro](https://astro.build/) and [Starlight](https://starlight.astro.build/).
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+**Live site:** [stratal.dev](https://stratal.dev)
 
-## 🚀 Project Structure
+Documentation content lives in `src/content/docs/`. File paths map directly to URL routes (e.g., `core-concepts/modules.md` → `/core-concepts/modules/`).
 
-Inside of your Astro + Starlight project, you'll see the following folders and files:
+## Commands
 
-```
-.
-├── public/
-├── src/
-│   ├── assets/
-│   ├── content/
-│   │   └── docs/
-│   └── content.config.ts
-├── astro.config.mjs
-├── package.json
-└── tsconfig.json
-```
+All commands are run from the root of the project:
 
-Starlight looks for `.md` or `.mdx` files in the `src/content/docs/` directory. Each file is exposed as a route based on its file name.
+| Command                  | Action                                           |
+| :----------------------- | :----------------------------------------------- |
+| `yarn install`           | Install dependencies                             |
+| `yarn dev`               | Start local dev server at `localhost:4321`        |
+| `yarn build`             | Build production site to `./dist/`               |
+| `yarn preview`           | Preview production build locally                 |
+| `yarn astro ...`         | Run Astro CLI commands (`astro add`, `astro check`) |
 
-Images can be added to `src/assets/` and embedded in Markdown with a relative link.
+## Documentation Sections
 
-Static assets, like favicons, can be placed in the `public/` directory.
+- **Introduction** — Why Stratal
+- **Getting Started** — Installation, first worker, project structure
+- **OpenAPI Documentation** — Setup, route conventions, schemas, Scalar UI
+- **Core Concepts** — Modules, controllers, dependency injection, providers, lifecycle hooks, configuration
+- **Guides** — Validation, guards, middleware, error handling, environment typing
+- **Integrations** — Queues, cron jobs, caching, storage, email, i18n, logging
+- **Testing** — Testing module, HTTP testing, mocks and fakes
+- **[API Reference](https://api-reference.stratal.dev)** — Auto-generated API docs
 
-## 🧞 Commands
+## Contributing
 
-All commands are run from the root of the project, from a terminal:
-
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `yarn install`             | Installs dependencies                            |
-| `yarn dev`             | Starts local dev server at `localhost:4321`      |
-| `yarn build`           | Build your production site to `./dist/`          |
-| `yarn preview`         | Preview your build locally, before deploying     |
-| `yarn astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `yarn astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Check out [Starlight’s docs](https://starlight.astro.build/), read [the Astro documentation](https://docs.astro.build), or jump into the [Astro Discord server](https://astro.build/chat).
+Edit or add Markdown/MDX files in `src/content/docs/`. Sidebar navigation is configured in `astro.config.mjs`.
