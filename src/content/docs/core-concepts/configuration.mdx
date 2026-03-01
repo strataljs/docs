@@ -109,8 +109,7 @@ export class CoreModule {}
 Inject `ConfigService` into any provider using `CONFIG_TOKENS.ConfigService`:
 
 ```typescript
-import { inject } from 'tsyringe'
-import { Transient } from 'stratal/di'
+import { inject, Transient } from 'stratal/di'
 import { CONFIG_TOKENS, type IConfigService } from 'stratal/config'
 
 @Transient()
@@ -285,8 +284,7 @@ export class CoreModule {}
 For application-specific helpers like `isDevelopment()`, create a wrapper service around `ConfigService`:
 
 ```typescript
-import { inject } from 'tsyringe'
-import { Transient } from 'stratal/di'
+import { inject, Transient } from 'stratal/di'
 import { CONFIG_TOKENS, type IConfigService } from 'stratal/config'
 
 @Transient()
