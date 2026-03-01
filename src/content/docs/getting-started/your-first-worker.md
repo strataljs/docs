@@ -70,7 +70,6 @@ For now, a single controller is all you need.
 The entry point is the file Wrangler invokes when a request arrives. Create `src/index.ts`:
 
 ```typescript
-import 'reflect-metadata'
 import { StratalWorker } from 'stratal/worker'
 import { AppModule } from './app.module'
 
@@ -81,7 +80,6 @@ export default class Worker extends StratalWorker {
 }
 ```
 
-- **`import 'reflect-metadata'`** must be the first import. It enables the TypeScript decorator metadata that Stratal's dependency injection relies on.
 - **`StratalWorker`** is the base class your worker extends. It wires up the module system, router, and DI container.
 - **`configure()`** returns the application configuration, pointing to your root module.
 

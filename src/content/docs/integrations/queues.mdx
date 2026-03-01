@@ -259,7 +259,6 @@ With the sync provider, `dispatch` blocks until the consumer finishes processing
 To handle queue messages in production, your worker class must extend `StratalWorker`. The `queue` method is already implemented in the base class:
 
 ```typescript
-import 'reflect-metadata'
 import { StratalWorker } from 'stratal/worker'
 import { AppModule } from './app.module'
 

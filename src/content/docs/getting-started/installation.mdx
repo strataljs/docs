@@ -70,22 +70,22 @@ If you already have a project and want to add Stratal to it, follow the steps be
 
 ### Install dependencies
 
-Install Stratal and its required peer dependency:
+Install Stratal:
 
 <Tabs syncKey="pkg">
   <TabItem label="npm">
     ```bash
-    npm install stratal reflect-metadata
+    npm install stratal
     ```
   </TabItem>
   <TabItem label="yarn">
     ```bash
-    yarn add stratal reflect-metadata
+    yarn add stratal
     ```
   </TabItem>
   <TabItem label="pnpm">
     ```bash
-    pnpm add stratal reflect-metadata
+    pnpm add stratal
     ```
   </TabItem>
 </Tabs>
@@ -158,7 +158,7 @@ Create a `wrangler.jsonc` file to configure how Cloudflare deploys your worker:
 Key settings:
 
 - **`main`** — points to your worker entry file.
-- **`nodejs_compat`** — required so Stratal can use Node.js APIs (e.g. `reflect-metadata`).
+- **`nodejs_compat`** — required so Stratal can use Node.js APIs.
 - **`ENVIRONMENT`** — a variable Stratal reads at runtime.
 - **`CACHE`** — a KV namespace binding used by Stratal's built-in caching layer. You can create one with `npx wrangler kv namespace create CACHE` and paste the returned `id` into the config.
 

@@ -76,7 +76,6 @@ Import the declaration file early in your worker entry point:
 
 ```typescript
 // src/index.ts
-import 'reflect-metadata'
 import './types/env'
 import { StratalWorker } from 'stratal/worker'
 import { AppModule } from './app.module'
@@ -312,7 +311,6 @@ Import all of them in your worker entry point:
 
 ```typescript
 // src/index.ts
-import 'reflect-metadata'
 import './types/env'
 import './types/queues'
 import './types/storage'

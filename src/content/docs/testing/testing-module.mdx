@@ -200,7 +200,7 @@ Call `Test.setBaseModules()` once in your `vitest.setup.ts` to register modules 
 
 ```typescript
 // vitest.setup.ts
-import 'reflect-metadata'
+import 'reflect-metadata' // Required in tests (StratalWorker handles this automatically in production)
 import { Test } from '@stratal/testing'
 import { CoreModule } from './src/core/core.module'
 import { DatabaseModule } from './src/database/database.module'
