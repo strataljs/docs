@@ -41,10 +41,44 @@ app.get('/legacy/reports', (c) => {
 const stratalHono = await stratal.hono
 app.route('/api', stratalHono)
 
-export default app
+export default {
+  fetch: app.fetch,
+  async queue(batch: MessageBatch) {
+    await stratal.queue(batch)
+  },
+  async scheduled(controller: ScheduledController) {
+    await stratal.scheduled(controller)
+  },
+}
 ```
 
 All routes defined in your Stratal modules will now be available under the `/api` prefix. For example, if `UsersModule` defines a `GET /users` route, it becomes `GET /api/users`.
+
+## Wiring up queues and cron jobs
+
+When you mount Stratal as a sub-app with `app.route()`, only HTTP routing is connected. Queue consumers and scheduled (cron) handlers are **not** part of the Hono routing layer — they must be explicitly forwarded from your worker's export.
+
+The code example above shows the full pattern: export an object with `fetch`, `queue`, and `scheduled` handlers instead of exporting `app` directly.
+
+```typescript
+export default {
+  fetch: app.fetch,
+  async queue(batch: MessageBatch) {
+    await stratal.queue(batch)
+  },
+  async scheduled(controller: ScheduledController) {
+    await stratal.scheduled(controller)
+  },
+}
+```
+
+<Aside type="note">
+  - `stratal.queue()` dispatches messages to consumers registered in Stratal modules by **message type**, not queue name.
+  - `stratal.scheduled()` matches `controller.cron` against job `schedule` properties defined in your modules.
+  - Email (via `EmailModule`) is queue-based — it requires the queue handler to be wired for delivery to work.
+</Aside>
+
+If you skip the `queue` or `scheduled` exports, any queue consumers or cron jobs defined in your Stratal modules will silently do nothing.
 
 ## Gradual migration
 
@@ -70,7 +104,15 @@ app.route('/api/v2', stratalHono)
 app.get('/api/v1/reports', (c) => c.json({ reports: [] }))
 app.post('/api/v1/webhooks', (c) => c.json({ received: true }))
 
-export default app
+export default {
+  fetch: app.fetch,
+  async queue(batch: MessageBatch) {
+    await stratal.queue(batch)
+  },
+  async scheduled(controller: ScheduledController) {
+    await stratal.scheduled(controller)
+  },
+}
 ```
 
 Over time, you can shrink the legacy section and expand the Stratal-managed routes.
@@ -109,6 +151,12 @@ Request
 
 Keep this in mind when migrating authentication or other cross-cutting concerns — you may need to configure them in both layers during the transition.
 
+### Error handling boundary
+
+Stratal catches all errors via its own `onError` handler and returns JSON error responses. Errors thrown within Stratal routes do **not** bubble up to the outer Hono app's error handler.
+
+During migration, this means error response formatting may differ between Stratal-managed routes and legacy Hono routes. If consistent error formatting is important, align your outer Hono app's error handler to return the same JSON structure, or migrate error-sensitive routes together.
+
 ### OpenAPI documentation
 
 Stratal's automatic OpenAPI documentation only covers routes registered through Stratal modules. Your legacy Hono routes won't appear in the generated spec. As you migrate routes into Stratal, they'll automatically be included in the OpenAPI documentation.
@@ -117,5 +165,7 @@ Stratal's automatic OpenAPI documentation only covers routes registered through 
 
 - [Modules](/core-concepts/modules/) for organizing your application into feature modules.
 - [Controllers and Routing](/core-concepts/controllers-and-routing/) for defining routes in Stratal.
+- [Queues](/integrations/queues/) for wiring up queue consumers in Stratal.
+- [Cron Jobs](/integrations/cron-jobs/) for scheduling recurring tasks.
 - [Middleware](/guides/middleware/) for configuring middleware within Stratal modules.
 - [Dependency Injection](/core-concepts/dependency-injection/) for understanding the DI container lifecycle.
