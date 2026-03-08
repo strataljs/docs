@@ -36,6 +36,7 @@ export default defineConfig({
                         { label: 'Installation', slug: 'getting-started/installation' },
                         { label: 'Your First Worker', slug: 'getting-started/your-first-worker' },
                         { label: 'Project Structure', slug: 'getting-started/project-structure' },
+                        { label: 'Incremental Adoption', slug: 'getting-started/incremental-adoption' },
                     ],
                 },
                 {

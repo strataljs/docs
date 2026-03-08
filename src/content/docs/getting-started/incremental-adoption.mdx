@@ -1,0 +1,121 @@
+---
+title: Incremental Adoption
+description: Learn how to mount Stratal into an existing Hono application for gradual migration, without rewriting your entire codebase.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal is built on top of [Hono](https://hono.dev/) and exposes its underlying `HonoApp` (which extends `OpenAPIHono`) via the `Stratal.hono` getter. This means you can mount a Stratal instance as a sub-app inside an existing Hono application, adopting it incrementally without rewriting everything at once.
+
+## Mounting Stratal into an existing Hono app
+
+If you already have a Hono application running on Cloudflare Workers, you can mount Stratal under a route prefix using Hono's `app.route()` method.
+
+First, create a Stratal instance with your module:
+
+```typescript
+// stratal-app.ts
+import { Stratal } from 'stratal'
+import { UsersModule } from './users/users.module'
+
+export const stratal = new Stratal({ module: UsersModule })
+```
+
+Then mount it into your existing Hono app:
+
+```typescript
+// index.ts
+import { Hono } from 'hono'
+import { stratal } from './stratal-app'
+
+const app = new Hono()
+
+// Your existing routes
+app.get('/health', (c) => c.json({ status: 'ok' }))
+app.get('/legacy/reports', (c) => {
+  // existing handler logic
+  return c.json({ reports: [] })
+})
+
+// Mount Stratal under /api
+const stratalHono = await stratal.hono
+app.route('/api', stratalHono)
+
+export default app
+```
+
+All routes defined in your Stratal modules will now be available under the `/api` prefix. For example, if `UsersModule` defines a `GET /users` route, it becomes `GET /api/users`.
+
+## Gradual migration
+
+A practical migration strategy is to move one feature at a time into Stratal modules while keeping everything else in your existing Hono app:
+
+1. **Pick a feature** — Start with a self-contained feature like user management or billing.
+2. **Create a Stratal module** — Move the routes, services, and logic into a Stratal module with controllers and providers.
+3. **Mount under a prefix** — Use `app.route()` to mount Stratal at the same path your existing routes used.
+4. **Remove old routes** — Delete the original Hono handlers for the migrated feature.
+5. **Repeat** — Continue moving features until your entire app runs on Stratal.
+
+```typescript
+import { Hono } from 'hono'
+import { stratal } from './stratal-app'
+
+const app = new Hono()
+
+// Migrated to Stratal
+const stratalHono = await stratal.hono
+app.route('/api/v2', stratalHono)
+
+// Legacy routes still served by plain Hono
+app.get('/api/v1/reports', (c) => c.json({ reports: [] }))
+app.post('/api/v1/webhooks', (c) => c.json({ received: true }))
+
+export default app
+```
+
+Over time, you can shrink the legacy section and expand the Stratal-managed routes.
+
+## Caveats and considerations
+
+### Async initialization
+
+The `stratal.hono` getter returns a `Promise<HonoApp>` because Stratal bootstraps asynchronously — it resolves modules, builds the DI container, and registers routes during initialization. You must `await` it before mounting.
+
+<Aside type="caution">
+  Do not call `stratal.hono` on every request. Await it once at the top level and reuse the resolved instance. Cloudflare Workers supports top-level await in ES module format.
+</Aside>
+
+### DI container scope
+
+Stratal manages its own dependency injection container. Services registered in Stratal's DI container are not available to your plain Hono handlers, and vice versa. If you need shared state between the two layers, consider using Cloudflare bindings (KV, D1, etc.) or migrating the shared logic into a Stratal provider.
+
+### Request-scoped containers
+
+Each request that hits a Stratal route gets its own request-scoped DI container. This container is created automatically by Stratal's internal middleware and disposed of after the response is sent. Requests handled by your plain Hono routes bypass this entirely.
+
+### Middleware ordering
+
+Middleware registered in your outer Hono app runs before Stratal's middleware chain. If you have global middleware (e.g., authentication or logging) in your Hono app, it will execute first, followed by Stratal's own middleware pipeline:
+
+```
+Request
+  → Outer Hono middleware
+  → Stratal request-scoped container setup
+  → Stratal user-defined middleware
+  → Stratal guards
+  → Stratal route handler
+  → Response
+```
+
+Keep this in mind when migrating authentication or other cross-cutting concerns — you may need to configure them in both layers during the transition.
+
+### OpenAPI documentation
+
+Stratal's automatic OpenAPI documentation only covers routes registered through Stratal modules. Your legacy Hono routes won't appear in the generated spec. As you migrate routes into Stratal, they'll automatically be included in the OpenAPI documentation.
+
+## Next steps
+
+- [Modules](/core-concepts/modules/) for organizing your application into feature modules.
+- [Controllers and Routing](/core-concepts/controllers-and-routing/) for defining routes in Stratal.
+- [Middleware](/guides/middleware/) for configuring middleware within Stratal modules.
+- [Dependency Injection](/core-concepts/dependency-injection/) for understanding the DI container lifecycle.
