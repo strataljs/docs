@@ -152,7 +152,7 @@ export class AppModule {}
 
 | File               | Role                                                                                           |
 | ------------------ | ---------------------------------------------------------------------------------------------- |
-| `src/index.ts`     | Worker entry point. Extends `StratalWorker` and returns the root module from `configure()`. |
+| `src/index.ts`     | Worker entry point. Exports a `new Stratal({ module: AppModule })` instance. |
 | `src/app.module.ts`| Root module. Imports every feature module so the DI container knows about all controllers, providers, consumers, and jobs. |
 | `package.json`     | Lists `stratal` as a dependency, plus `typescript`, `wrangler`, and `@cloudflare/workers-types` as dev dependencies. |
 | `tsconfig.json`    | Enables `experimentalDecorators` and `emitDecoratorMetadata` — both required for Stratal's DI system. |

@@ -1,0 +1,141 @@
+---
+title: RBAC
+description: Role-based access control with Casbin, role hierarchies, permission enforcement, and database-backed policy storage.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@stratal/framework` provides role-based access control (RBAC) powered by [Casbin](https://casbin.org/). It supports role hierarchies, permission scopes, and database-backed policy storage via the ZenStack adapter.
+
+## Setup
+
+### Configure RbacModule
+
+```typescript
+import { Module } from 'stratal/module'
+import { RbacModule } from '@stratal/framework/rbac'
+
+@Module({
+  imports: [
+    RbacModule.forRoot({
+      model: MY_RBAC_MODEL,
+      defaultPolicies: [
+        ['admin', 'users:*', '.*'],
+        ['member', 'users:read', '.*'],
+      ],
+      roleHierarchy: [
+        ['super_admin', 'admin'],
+        ['admin', 'member'],
+      ],
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+### Configuration options
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `model` | `string` | Casbin model definition string |
+| `defaultPolicies` | `string[][]` | Default policies seeded on initialization |
+| `roleHierarchy` | `[string, string][]` | Role inheritance pairs `[child, parent]` |
+
+## CasbinService
+
+`CasbinService` is a request-scoped service that provides the full Casbin authorization API. It automatically knows the current user from `AuthContext`.
+
+```typescript
+import { Transient, inject } from 'stratal/di'
+import { CasbinService } from '@stratal/framework/rbac'
+
+@Transient()
+export class PermissionsService {
+  constructor(
+    @inject(CasbinService) private readonly casbin: CasbinService,
+  ) {}
+
+  async canEditUsers(): Promise<boolean> {
+    return this.casbin.currentUserHasPermission('users:write', '.*')
+  }
+}
+```
+
+### Permission checking
+
+| Method | Description |
+| --- | --- |
+| `hasPermission(userId, scope, action)` | Check if a user has a specific permission |
+| `currentUserHasPermission(scope, action)` | Check the current request's user |
+| `hasAnyPermission(userId, scopes[], action)` | Check if user has any of the listed permissions |
+| `currentUserHasAnyPermission(scopes[], action)` | Check current user for any of the permissions |
+
+### Role management
+
+| Method | Description |
+| --- | --- |
+| `addRoleForUser(userId, role)` | Assign a role to a user |
+| `deleteRoleForUser(userId, role)` | Remove a role from a user |
+| `getRolesForUser(userId)` | Get all directly assigned roles |
+| `getImplicitRolesForUser(userId)` | Get all roles including inherited ones |
+| `hasRoleForUser(userId, role)` | Check if a user has a specific role |
+| `setRolesForUser(userId, roles[])` | Replace all roles for a user |
+| `getCurrentUserRoles()` | Get roles for the current request's user |
+| `currentUserHasRole(role)` | Check if current user has a role |
+
+### Role hierarchy
+
+| Method | Description |
+| --- | --- |
+| `addRoleInheritance(childRole, parentRole)` | Add a role inheritance relationship |
+| `deleteRoleInheritance(childRole, parentRole)` | Remove a role inheritance relationship |
+
+### Deletion
+
+| Method | Description |
+| --- | --- |
+| `deleteUser(userId)` | Remove all policies for a user |
+| `deleteRole(role)` | Remove a role and its policies |
+
+### Frontend support
+
+```typescript
+const permissions = await this.casbin.getPermissionsForUserAsCasbinJs(userId)
+// Returns permissions in a format compatible with casbin.js for frontend enforcement
+```
+
+## Role hierarchies
+
+Role hierarchies let child roles inherit all permissions of parent roles:
+
+```typescript
+RbacModule.forRoot({
+  model: MY_RBAC_MODEL,
+  roleHierarchy: [
+    ['super_admin', 'admin'],  // super_admin inherits all admin permissions
+    ['admin', 'member'],       // admin inherits all member permissions
+  ],
+})
+```
+
+With this hierarchy, a `super_admin` has the permissions of `admin` and `member` in addition to any permissions directly assigned to `super_admin`.
+
+Use `getImplicitRolesForUser()` to see the full role chain including inherited roles.
+
+## Database-backed policies
+
+The `RbacModule` uses a ZenStack database adapter for policy storage. Policies are persisted in the database and loaded into the Casbin enforcer. The `CasbinEnforcerService` manages the enforcer lifecycle:
+
+- Lazy-loads and caches the enforcer on first use
+- Seeds default policies and role hierarchies on initialization
+- Provides `clearCache()` to refresh the enforcer when policies change
+
+<Aside type="tip">
+  Call `clearCache()` on the `CasbinEnforcerService` after modifying policies programmatically to ensure the enforcer picks up the changes.
+</Aside>
+
+## Next steps
+
+- [Auth Guard](/framework/auth-guard/) for protecting routes with RBAC checks.
+- [Auth](/framework/auth/) for the authentication layer that provides user identity.
+- [Guards](/guides/guards/) for the core guard system.

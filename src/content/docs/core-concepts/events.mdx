@@ -1,0 +1,180 @@
+---
+title: Events
+description: Emit and listen for events with pattern matching, priority ordering, and configurable blocking behavior.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal includes a built-in event system that lets you decouple parts of your application through event emission and listeners. Events support pattern matching, priority-based ordering, and configurable blocking behavior.
+
+## EventRegistry
+
+The `EventRegistry` is the core service for working with events. Inject it using `DI_TOKENS.EventRegistry`:
+
+```typescript
+import { Transient, inject, DI_TOKENS } from 'stratal/di'
+import type { IEventRegistry } from 'stratal/events'
+
+@Transient()
+export class NotificationService {
+  constructor(
+    @inject(DI_TOKENS.EventRegistry) private readonly events: IEventRegistry,
+  ) {}
+
+  async notifyUserCreated(userId: string) {
+    await this.events.emit('after.User.create', { data: { id: userId } })
+  }
+}
+```
+
+The registry provides four methods:
+
+| Method | Description |
+| --- | --- |
+| `emit(event, context?)` | Emit an event, calling all matching handlers |
+| `on(event, handler, options?)` | Register a handler for an event |
+| `off(event, handler)` | Remove a handler |
+| `once(event, handler, options?)` | Register a handler that runs only once |
+
+## Declarative listeners
+
+For most use cases, declarative listeners are the preferred approach. Create a class decorated with `@Listener()` and use `@On()` to mark handler methods:
+
+```typescript
+import { Listener, On } from 'stratal/events'
+import type { EventContext } from 'stratal/events'
+
+@Listener()
+export class UserCreatedListener {
+  @On('after.User.create', { priority: 10 })
+  async sendWelcomeEmail(context: EventContext<'after.User.create'>) {
+    const user = context.result
+    // send welcome email
+  }
+
+  @On('after.User.create', { priority: 5 })
+  async createOnboardingTasks(context: EventContext<'after.User.create'>) {
+    const user = context.result
+    // create onboarding tasks
+  }
+}
+```
+
+Register the listener in a module's `providers` array:
+
+```typescript
+@Module({
+  providers: [UserCreatedListener],
+})
+export class UsersModule {}
+```
+
+Stratal auto-discovers `@Listener()` classes during bootstrap and wires their `@On()` methods to the `EventRegistry`.
+
+<Aside type="note">
+  The `@Listener()` decorator automatically applies `@Transient()` to the class, so you don't need to add it yourself.
+</Aside>
+
+## Event options
+
+The `@On()` decorator and `on()` method accept an options object:
+
+```typescript
+interface EventOptions {
+  priority?: number   // Higher values execute first (default: 0)
+  blocking?: boolean  // Force blocking vs non-blocking behavior
+}
+```
+
+### Priority
+
+Handlers with higher `priority` values run first. When two handlers have the same priority, they run in registration order:
+
+```typescript
+@On('after.User.create', { priority: 10 })  // runs first
+async highPriority(ctx: EventContext<'after.User.create'>) {}
+
+@On('after.User.create', { priority: 1 })   // runs second
+async lowPriority(ctx: EventContext<'after.User.create'>) {}
+```
+
+### Blocking behavior
+
+Blocking controls whether `emit()` waits for the handler to complete:
+
+- **`before.*` events** — always blocking (`true`). The emitter waits for all handlers before proceeding.
+- **`after.*` events** — non-blocking (`false`). Handlers run in the background via `waitUntil`.
+- **Custom events** — blocking (`true`) by default.
+
+You can override the default with the `blocking` option:
+
+```typescript
+// Force an after event to block
+@On('after.User.create', { blocking: true })
+async mustComplete(ctx: EventContext<'after.User.create'>) {
+  // emit() will wait for this handler
+}
+```
+
+## Pattern matching
+
+When an event is emitted, the registry finds handlers using hierarchical pattern matching. For an event like `after.User.create`, the following patterns are checked in order:
+
+| Pattern | Matches |
+| --- | --- |
+| `after.User.create` | Exact match |
+| `after.User` | All operations on the User model |
+| `after.create` | All create operations across all models |
+| `after` | All after-phase events |
+
+This lets you write broad handlers that react to categories of events:
+
+```typescript
+@Listener()
+export class AuditListener {
+  @On('after.User')
+  async logAllUserChanges(context: EventContext<'after.User'>) {
+    // called for after.User.create, after.User.update, after.User.delete, etc.
+  }
+
+  @On('after.create')
+  async logAllCreations(context: EventContext<'after.create'>) {
+    // called for after.User.create, after.Post.create, etc.
+  }
+}
+```
+
+## Type-safe custom events
+
+By default, event names are typed as `string`. You can narrow them using module augmentation on the `CustomEventRegistry` interface:
+
+```typescript
+// src/types/events.ts
+export {}
+
+declare module 'stratal/events' {
+  interface CustomEventRegistry {
+    'user.verified': { userId: string }
+    'order.completed': { orderId: string; total: number }
+  }
+}
+```
+
+After augmentation, `emit()` and `@On()` will provide autocompletion for your custom event names and type-check the context:
+
+```typescript
+// Type-safe emission
+await this.events.emit('user.verified', { userId: '123' })
+
+// Type-safe handler
+@On('user.verified')
+async onUserVerified(context: EventContext<'user.verified'>) {
+  context.userId // string
+}
+```
+
+## Next steps
+
+- [Database Events](/framework/database-events/) for events emitted automatically by database operations.
+- [Lifecycle Hooks](/core-concepts/lifecycle-hooks/) for module-level initialization and shutdown events.
+- [Providers](/core-concepts/providers/) for registering listeners as providers.

@@ -1,6 +1,6 @@
 ---
 title: Cron Jobs
-description: Schedule recurring tasks with Cloudflare Cron Triggers using the CronJob interface, error handling, and the StratalWorker scheduled handler.
+description: Schedule recurring tasks with Cloudflare Cron Triggers using the CronJob interface, error handling, and the Stratal scheduled handler.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -133,20 +133,16 @@ This aggregate error is then handled by the `GlobalErrorHandler`, ensuring all f
 
 ## Worker setup
 
-Your worker class needs to extend `StratalWorker`. The `scheduled` method is already implemented in the base class:
+Export a `Stratal` instance. The `scheduled` handler is built in:
 
 ```typescript
-import { StratalWorker } from 'stratal/worker'
+import { Stratal } from 'stratal'
 import { AppModule } from './app.module'
 
-export default class Worker extends StratalWorker {
-  protected configure() {
-    return { module: AppModule }
-  }
-}
+export default new Stratal({ module: AppModule })
 ```
 
-When Cloudflare fires a cron trigger, `StratalWorker.scheduled(controller)` is called. It:
+When Cloudflare fires a cron trigger, `Stratal.scheduled(controller)` is called. It:
 
 1. Initializes the application (if not already running).
 2. Creates a request scope with a default `en` locale for i18n context.

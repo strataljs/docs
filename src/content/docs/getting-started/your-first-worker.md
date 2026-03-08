@@ -70,18 +70,14 @@ For now, a single controller is all you need.
 The entry point is the file Wrangler invokes when a request arrives. Create `src/index.ts`:
 
 ```typescript
-import { StratalWorker } from 'stratal/worker'
+import { Stratal } from 'stratal'
 import { AppModule } from './app.module'
 
-export default class Worker extends StratalWorker {
-  protected configure() {
-    return { module: AppModule }
-  }
-}
+export default new Stratal({ module: AppModule })
 ```
 
-- **`StratalWorker`** is the base class your worker extends. It wires up the module system, router, and DI container.
-- **`configure()`** returns the application configuration, pointing to your root module.
+- **`Stratal`** is the framework entry point. It eagerly bootstraps the module system, router, and DI container.
+- The `module` option points to your root module.
 
 ## Run the dev server
 
@@ -114,8 +110,8 @@ You should receive:
 
 Here is the path a request takes through your worker:
 
-1. **Wrangler** receives the HTTP request and hands it to your exported `Worker` class.
-2. **StratalWorker** boots the DI container and passes the request to the router.
+1. **Wrangler** receives the HTTP request and hands it to the exported `Stratal` instance.
+2. **Stratal** passes the request to the router, which runs inside an initialized DI container.
 3. The **router** matches `GET /api/hello` to `HelloController.index()` using the convention-based mapping.
 4. The **controller** method runs and returns a JSON response.
 5. The response is sent back to the caller.

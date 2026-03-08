@@ -57,6 +57,7 @@ export default defineConfig({
                         { label: 'Controllers and Routing', slug: 'core-concepts/controllers-and-routing' },
                         { label: 'Dependency Injection', slug: 'core-concepts/dependency-injection' },
                         { label: 'Providers', slug: 'core-concepts/providers' },
+                        { label: 'Events', slug: 'core-concepts/events' },
                         { label: 'Lifecycle Hooks', slug: 'core-concepts/lifecycle-hooks' },
                         { label: 'Configuration', slug: 'core-concepts/configuration' },
                     ],
@@ -90,6 +91,19 @@ export default defineConfig({
                         { label: 'Testing Module', slug: 'testing/testing-module' },
                         { label: 'HTTP Testing', slug: 'testing/http-testing' },
                         { label: 'Mocks and Fakes', slug: 'testing/mocks-and-fakes' },
+                        { label: 'Factories', slug: 'testing/factories' },
+                        { label: 'Seeders', slug: 'testing/seeders' },
+                    ],
+                },
+                {
+                    label: '@stratal/framework',
+                    items: [
+                        { label: 'Overview', slug: 'framework/overview' },
+                        { label: 'Database', slug: 'framework/database' },
+                        { label: 'Database Events', slug: 'framework/database-events' },
+                        { label: 'Auth', slug: 'framework/auth' },
+                        { label: 'RBAC', slug: 'framework/rbac' },
+                        { label: 'Auth Guard', slug: 'framework/auth-guard' },
                     ],
                 },
                 {

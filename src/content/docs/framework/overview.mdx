@@ -1,0 +1,46 @@
+---
+title: "@stratal/framework"
+description: Higher-level modules for database, auth, RBAC, factories, and guards built on the Stratal core.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@stratal/framework` is an optional package that provides higher-level features on top of the core `stratal` package. It includes database integration, authentication, role-based access control, factories, and guards.
+
+## Installation
+
+```bash
+yarn add @stratal/framework
+```
+
+## Sub-path exports
+
+The package is organized into sub-path exports so you only import what you need:
+
+| Import path | Provides |
+| --- | --- |
+| `@stratal/framework/database` | `DatabaseModule`, `@InjectDB`, `DatabaseSchemaRegistry`, plugins |
+| `@stratal/framework/auth` | `AuthModule`, `AuthService` |
+| `@stratal/framework/context` | `AuthContext` |
+| `@stratal/framework/rbac` | `RbacModule`, `CasbinService` |
+| `@stratal/framework/guards` | `AuthGuard` factory |
+| `@stratal/framework/factory` | `Factory` base class, `Sequence` |
+
+## Relationship to core
+
+The core `stratal` package provides the module system, DI container, router, events, queues, and cron jobs. `@stratal/framework` builds on these primitives to offer application-level features:
+
+- **Database** uses the DI container for connection management and the event system for database events.
+- **Auth** uses middleware and request-scoped providers from the core.
+- **RBAC** integrates with the DI container and request scope for per-request authorization.
+- **Guards** use the core guard system (`CanActivate`) with auth and RBAC checks.
+- **Factories** work with the database service for persistence.
+
+You can use the core package without `@stratal/framework` if you don't need these features.
+
+## Next steps
+
+- [Database](/framework/database/) for ORM integration and multi-connection support.
+- [Auth](/framework/auth/) for authentication with Better Auth.
+- [RBAC](/framework/rbac/) for role-based access control.
+- [Auth Guard](/framework/auth-guard/) for protecting routes with auth and permission checks.

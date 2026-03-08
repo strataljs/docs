@@ -94,10 +94,10 @@ export class AppModule {}
 
 When you inject a concrete class, TypeScript's type metadata is enough for the container to find the right provider. But when you depend on an abstraction (an interface or a value), you need a **token** to identify it.
 
-Create tokens using any unique string:
+Create tokens using Symbols:
 
 ```typescript
-export const USER_REPOSITORY = 'UserRepository'
+export const USER_REPOSITORY = Symbol.for('UserRepository')
 ```
 
 Register a provider against the token:
@@ -134,14 +134,19 @@ import { DI_TOKENS } from 'stratal/di'
 
 Commonly used tokens include:
 
-| Token                        | Provides                                      |
-| ---------------------------- | --------------------------------------------- |
-| `DI_TOKENS.CloudflareEnv`   | The Cloudflare `env` bindings object          |
-| `DI_TOKENS.ExecutionContext` | The Cloudflare `ExecutionContext`              |
-| `DI_TOKENS.Container`       | The DI container itself                       |
-| `DI_TOKENS.Application`     | The Stratal application instance              |
-| `DI_TOKENS.ErrorHandler`    | The registered error handler                  |
-| `DI_TOKENS.Database`        | The database service (if configured)          |
+| Token                           | Provides                                      |
+| ------------------------------- | --------------------------------------------- |
+| `DI_TOKENS.CloudflareEnv`      | The Cloudflare `env` bindings object          |
+| `DI_TOKENS.ExecutionContext`   | The Cloudflare `ExecutionContext`              |
+| `DI_TOKENS.Container`          | The DI container itself                       |
+| `DI_TOKENS.Application`        | The Stratal application instance              |
+| `DI_TOKENS.ErrorHandler`       | The registered error handler                  |
+| `DI_TOKENS.Database`           | The database service (if configured)          |
+| `DI_TOKENS.Queue`              | The queue manager                             |
+| `DI_TOKENS.ConsumerRegistry`   | The queue consumer registry                   |
+| `DI_TOKENS.Cron`               | The cron job manager                          |
+| `DI_TOKENS.EventRegistry`      | The event registry                            |
+| `DI_TOKENS.AuthContext`         | The authentication context (request-scoped)   |
 
 ## The two-tier container
 

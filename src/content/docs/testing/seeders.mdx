@@ -1,0 +1,132 @@
+---
+title: Seeders
+description: Populate your database with test and development data using the @stratal/seeders CLI.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Seeders populate your database with initial or test data. The `@stratal/seeders` package provides a `Seeder` base class and a CLI for running seeders against your Cloudflare Workers bindings.
+
+## Installation
+
+```bash
+yarn add -D @stratal/seeders
+```
+
+## Creating a seeder
+
+Extend the `Seeder` base class and implement the `run()` method:
+
+```typescript
+import { Seeder } from '@stratal/seeders'
+import { inject, DI_TOKENS } from 'stratal/di'
+import type { DatabaseService } from '@stratal/framework/database'
+import { UserFactory } from './user.factory'
+
+export class UserSeeder extends Seeder {
+  constructor(
+    @inject(DI_TOKENS.Database) private readonly db: DatabaseService,
+  ) {
+    super()
+  }
+
+  async run(): Promise<void> {
+    await new UserFactory().count(10).createMany(this.db)
+  }
+}
+```
+
+Register the seeder in a module's `providers` array:
+
+```typescript
+@Module({
+  providers: [UserSeeder],
+})
+export class UsersModule {}
+```
+
+## Naming convention
+
+Seeder names are derived from the class name by removing the `Seeder` suffix and converting to kebab-case:
+
+| Class name | CLI name |
+| --- | --- |
+| `UserSeeder` | `user` |
+| `RolePermissionsSeeder` | `role-permissions` |
+| `InitialDataSeeder` | `initial-data` |
+
+## CLI commands
+
+The `stratal-seed` CLI discovers seeders from your module tree and runs them.
+
+### Run a specific seeder
+
+```bash
+npx stratal-seed run user
+```
+
+### Run all seeders
+
+```bash
+npx stratal-seed run --all
+```
+
+### List available seeders
+
+```bash
+npx stratal-seed list
+```
+
+### Dry run
+
+Preview which seeders would run without executing them:
+
+```bash
+npx stratal-seed run --all --dry-run
+```
+
+## How it works
+
+The CLI uses Wrangler's `getPlatformProxy()` to obtain your Cloudflare bindings (D1, KV, R2, etc.) locally. It then bootstraps your module tree, discovers all classes that extend `Seeder`, and executes their `run()` methods inside a request scope.
+
+
+## Auto-discovery
+
+Seeders are automatically discovered from the module tree. Any class that extends `Seeder` and is listed in a module's `providers` array will be found by the CLI. Only bare class providers are scanned — value, factory, and existing providers are skipped.
+
+## Using with factories
+
+Seeders pair naturally with [factories](/testing/factories/) for generating realistic data:
+
+```typescript
+import { Seeder } from '@stratal/seeders'
+import { inject, DI_TOKENS } from 'stratal/di'
+import type { DatabaseService } from '@stratal/framework/database'
+import { UserFactory } from './user.factory'
+import { PostFactory } from './post.factory'
+
+export class DemoDataSeeder extends Seeder {
+  constructor(
+    @inject(DI_TOKENS.Database) private readonly db: DatabaseService,
+  ) {
+    super()
+  }
+
+  async run(): Promise<void> {
+    const users = await new UserFactory().count(5).createManyAndReturn(this.db)
+
+    for (const user of users) {
+      await new PostFactory()
+        .state(attrs => ({ ...attrs, authorId: user.id }))
+        .count(3)
+        .createMany(this.db)
+    }
+  }
+}
+```
+
+## Next steps
+
+- [Factories](/testing/factories/) for generating test data with Faker.js.
+- [Database](/framework/database/) for configuring the database connection.
+- [Testing Overview](/testing/overview/) for setting up your test environment.

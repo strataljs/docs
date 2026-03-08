@@ -1,0 +1,94 @@
+---
+title: Auth Guard
+description: Protect routes with authentication and permission checks using the AuthGuard factory.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The `AuthGuard` factory from `@stratal/framework/guards` creates guards that check authentication and optionally verify permissions. It integrates with `AuthContext` and `CasbinService` to provide both authentication-only and scope-based authorization.
+
+## Authentication only
+
+Apply `AuthGuard()` without options to require authentication on a controller or route:
+
+```typescript
+import { Controller, IController, Route, RouterContext } from 'stratal/router'
+import { UseGuards } from 'stratal/router'
+import { AuthGuard } from '@stratal/framework/guards'
+
+@Controller('/api/profile')
+@UseGuards(AuthGuard())
+export class ProfileController implements IController {
+  @Route({ response: profileSchema })
+  index(ctx: RouterContext) {
+    // only authenticated users reach this handler
+    return ctx.json({ profile: '...' })
+  }
+}
+```
+
+When no scopes are provided, `AuthGuard` checks `AuthContext.isAuthenticated()`. If the user is not authenticated, it throws a `UserNotAuthenticatedError` (HTTP 401).
+
+## With permission scopes
+
+Pass a `scopes` array to check specific permissions via `CasbinService`:
+
+```typescript
+@Controller('/api/admin/users')
+@UseGuards(AuthGuard({ scopes: ['users:write'] }))
+export class AdminUsersController implements IController {
+  @Route({ response: usersSchema })
+  index(ctx: RouterContext) {
+    // only users with 'users:write' permission reach this handler
+    return ctx.json({ users: [] })
+  }
+}
+```
+
+With scopes, `AuthGuard` first checks authentication (401 if not authenticated), then checks if the user has the required permission (403 if unauthorized).
+
+## Per-route guards
+
+You can apply `AuthGuard` at the route level instead of the controller level:
+
+```typescript
+@Controller('/api/students')
+export class StudentsController implements IController {
+  @Route({ response: studentsSchema })
+  @UseGuards(AuthGuard({ scopes: ['students:read'] }))
+  index(ctx: RouterContext) {
+    // requires students:read permission
+  }
+
+  @Route({ response: studentSchema })
+  @UseGuards(AuthGuard({ scopes: ['students:read'] }))
+  show(ctx: RouterContext) {
+    // requires students:read permission
+  }
+
+  @Route({ body: createStudentSchema, response: studentSchema })
+  @UseGuards(AuthGuard({ scopes: ['students:write'] }))
+  create(ctx: RouterContext) {
+    // requires students:write permission
+  }
+}
+```
+
+## Error types
+
+| Error | HTTP Status | When |
+| --- | --- | --- |
+| `UserNotAuthenticatedError` | 401 | User is not authenticated |
+| `InsufficientPermissionsError` | 403 | User is authenticated but lacks required permissions |
+
+Both errors are handled by Stratal's global error handler and produce appropriate JSON error responses.
+
+## Prerequisites
+
+`AuthGuard` requires both the [AuthModule](/framework/auth/) and [RbacModule](/framework/rbac/) to be configured when using scopes. For authentication-only checks (no scopes), only `AuthModule` is required.
+
+## Next steps
+
+- [Auth](/framework/auth/) for configuring authentication.
+- [RBAC](/framework/rbac/) for configuring roles and permissions.
+- [Guards](/guides/guards/) for the core guard system and custom guards.

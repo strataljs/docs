@@ -77,14 +77,10 @@ Import the declaration file early in your worker entry point:
 ```typescript
 // src/index.ts
 import './types/env'
-import { StratalWorker } from 'stratal/worker'
+import { Stratal } from 'stratal'
 import { AppModule } from './app.module'
 
-export default class Worker extends StratalWorker {
-  protected configure() {
-    return { module: AppModule }
-  }
-}
+export default new Stratal({ module: AppModule })
 ```
 
 After this, every service that injects `StratalEnv` gets full autocompletion and type checking for all bindings defined in your Wrangler configuration.
@@ -314,18 +310,14 @@ Import all of them in your worker entry point:
 import './types/env'
 import './types/queues'
 import './types/storage'
-import { StratalWorker } from 'stratal/worker'
+import { Stratal } from 'stratal'
 import { AppModule } from './app.module'
 
-export default class Worker extends StratalWorker {
-  protected configure() {
-    return { module: AppModule }
-  }
-}
+export default new Stratal({ module: AppModule })
 ```
 
 <Aside type="caution">
-  Make sure every type declaration file is imported before `StratalWorker` runs. If a file is not imported, its augmented types will not be visible to the rest of the application.
+  Make sure every type declaration file is imported before the `Stratal` instance is created. If a file is not imported, its augmented types will not be visible to the rest of the application.
 </Aside>
 
 ## The type flow
@@ -334,7 +326,7 @@ Here is how the environment flows from the Cloudflare runtime to your services:
 
 ```mermaid
 graph TD
-  A["Cloudflare Runtime"] -->|"passes env, ctx"| B["StratalWorker.fetch()"]
+  A["Cloudflare Runtime"] -->|"passes env, ctx"| B["Stratal.fetch()"]
   B -->|"creates"| C["Application(env, ctx)"]
   C -->|"creates"| D["DI Container"]
   D --> E["DI_TOKENS.CloudflareEnv → StratalEnv"]

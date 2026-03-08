@@ -48,7 +48,7 @@ export default defineWorkersConfig({
 
 ### Vitest setup file
 
-Create a `vitest.setup.ts` that imports `reflect-metadata` (required in tests since they don't go through `StratalWorker`, which handles this automatically in production) and configures shared base modules:
+Create a `vitest.setup.ts` that imports `reflect-metadata` (required in tests since they don't go through the `Stratal` entry point, which handles this import automatically in production) and configures shared base modules:
 
 ```typescript
 import 'reflect-metadata'

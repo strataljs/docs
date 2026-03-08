@@ -1,0 +1,159 @@
+---
+title: Database Events
+description: Automatically emitted events for database operations with pattern matching and type-safe contexts.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal automatically emits events before and after every database operation. The `EventEmitterPlugin` is auto-registered by the `DatabaseModule` — no additional setup is required. These events integrate with the core [event system](/core-concepts/events/) and support the same pattern matching, priority, and blocking behavior.
+
+## Event pattern
+
+Database events follow the pattern `{phase}.{Model}.{operation}`:
+
+| Segment | Values | Example |
+| --- | --- | --- |
+| Phase | `before`, `after` | `before`, `after` |
+| Model | Any model name from your schema | `User`, `Post` |
+| Operation | `create`, `update`, `delete`, etc. | `create` |
+
+A full event name looks like `after.User.create` or `before.Post.update`.
+
+## Listening to database events
+
+Use the `@Listener()` and `@On()` decorators from the core event system:
+
+```typescript
+import { Listener, On } from 'stratal/events'
+import type { EventContext } from 'stratal/events'
+
+@Listener()
+export class UserEventListener {
+  @On('after.User.create')
+  async onUserCreated(context: EventContext<'after.User.create'>) {
+    const user = context.result
+    // send welcome email, create audit log, etc.
+  }
+
+  @On('before.User.delete')
+  async onBeforeUserDelete(context: EventContext<'before.User.delete'>) {
+    const data = context.data
+    // archive user data before deletion
+  }
+}
+```
+
+Register the listener in a module's `providers` array:
+
+```typescript
+@Module({
+  providers: [UserEventListener],
+})
+export class UsersModule {}
+```
+
+## Wildcard patterns
+
+Database events support the same hierarchical pattern matching as core events:
+
+### Model wildcard
+
+Listen to all operations on a specific model:
+
+```typescript
+@On('after.User')
+async onAnyUserChange(context: EventContext<'after.User'>) {
+  // context.operation tells you which operation triggered the event
+  console.log(`User ${context.operation} completed`)
+}
+```
+
+### Operation wildcard
+
+Listen to a specific operation across all models:
+
+```typescript
+@On('after.create')
+async onAnyCreate(context: EventContext<'after.create'>) {
+  // context.model tells you which model was created
+  console.log(`${context.model} created`)
+}
+```
+
+### Phase wildcard
+
+Listen to all events in a phase:
+
+```typescript
+@On('after')
+async onAnyAfterEvent(context: EventContext<'after'>) {
+  console.log(`${context.model}.${context.operation} completed`)
+}
+```
+
+## Event context
+
+The event context is a discriminated union based on the event pattern:
+
+### Exact events (`after.User.create`)
+
+```typescript
+interface ExactEventContext {
+  data: UserCreateInput          // before: mutable, after: readonly
+  result: User                   // only available in after phase
+}
+```
+
+### Model wildcard (`after.User`)
+
+```typescript
+interface ModelWildcardContext {
+  operation: DatabaseOperation   // 'create' | 'update' | 'delete' | ...
+  data: unknown
+  result: unknown
+}
+```
+
+### Operation wildcard (`after.create`)
+
+```typescript
+interface OperationWildcardContext {
+  model: ModelName               // 'User' | 'Post' | ...
+  data: unknown
+  result: unknown
+}
+```
+
+### Phase wildcard (`after`)
+
+```typescript
+interface PhaseWildcardContext {
+  model: ModelName
+  operation: DatabaseOperation
+  data: unknown
+  result: unknown
+}
+```
+
+<Aside type="tip">
+  For exact event patterns like `after.User.create`, the context is fully typed — `data` and `result` match the model's types. Wildcard patterns use `unknown` since the model or operation is not known at compile time.
+</Aside>
+
+## Blocking behavior
+
+Database events follow the same blocking rules as core events:
+
+- **`before.*`** events are always **blocking**. The database operation waits for all handlers to complete before proceeding.
+- **`after.*`** events are **non-blocking** by default. Handlers run in the background via `waitUntil`.
+
+This means `before` handlers can validate or modify data before it reaches the database, while `after` handlers run without delaying the response.
+
+## Type-safe augmentation
+
+The framework automatically augments the core `CustomEventRegistry` with your database events based on the `StratalDatabase` schema augmentation. Once you've set up [database type augmentation](/framework/database/), your database events are automatically type-safe.
+
+## Next steps
+
+- [Events](/core-concepts/events/) for the core event system.
+- [Database](/framework/database/) for database configuration.
+- [Auth](/framework/auth/) for authentication integration.

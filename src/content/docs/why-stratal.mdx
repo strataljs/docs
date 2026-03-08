@@ -163,17 +163,13 @@ Dependency injection ties it together. Services declare their dependencies throu
 
 Some modules need runtime configuration. For those, `forRoot` and `forRootAsync` let you create dynamic modules that accept options at registration time. The `StorageModule.forRoot({ bucket: 'uploads' })` call above is an example of this pattern.
 
-The entry point for your entire Worker is a single class:
+The entry point for your entire Worker is a single line:
 
 ```typescript
-export default class Worker extends StratalWorker {
-  protected configure() {
-    return { module: AppModule }
-  }
-}
+export default new Stratal({ module: AppModule })
 ```
 
-`StratalWorker` implements `fetch()`, `queue()`, and `scheduled()` for you. Define your module tree, and the framework handles the rest.
+`Stratal` implements `fetch()`, `queue()`, and `scheduled()` for you. Define your module tree, and the framework handles the rest.
 
 ## Sharing code across Workers
 

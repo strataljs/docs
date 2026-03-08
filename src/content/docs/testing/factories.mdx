@@ -1,0 +1,191 @@
+---
+title: Factories
+description: Generate test data with type-safe factories, Faker.js integration, state modifiers, and database persistence.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Factories generate test data with sensible defaults. They integrate with [Faker.js](https://fakerjs.dev/) for realistic values and support state modifiers for creating variants like admin users or archived posts.
+
+## Installation
+
+Factories are part of the `@stratal/framework` package:
+
+```bash
+yarn add @stratal/framework
+```
+
+## Creating a factory
+
+Extend the `Factory` base class and implement `definition()`:
+
+```typescript
+import { Factory } from '@stratal/framework/factory'
+import type { User, UserCreateInput } from './types'
+
+export class UserFactory extends Factory<User, UserCreateInput> {
+  protected model = 'user'
+
+  protected definition(): UserCreateInput {
+    return {
+      email: this.faker.internet.email(),
+      firstName: this.faker.person.firstName(),
+      lastName: this.faker.person.lastName(),
+      emailVerified: true,
+    }
+  }
+}
+```
+
+The `Factory<TModel, TCreateInput>` base class provides:
+
+| Property / Method | Description |
+| --- | --- |
+| `this.faker` | A Faker.js instance for generating realistic data |
+| `model` | The database model name (used by `create` methods) |
+| `definition()` | Returns default attributes for the model |
+
+## State modifiers
+
+Use `state()` to define named variants that override specific attributes:
+
+```typescript
+export class UserFactory extends Factory<User, UserCreateInput> {
+  protected model = 'user'
+
+  protected definition(): UserCreateInput {
+    return {
+      email: this.faker.internet.email(),
+      firstName: this.faker.person.firstName(),
+      role: 'member',
+    }
+  }
+
+  admin() {
+    return this.state(attrs => ({ ...attrs, role: 'admin' }))
+  }
+
+  unverified() {
+    return this.state(attrs => ({ ...attrs, emailVerified: false }))
+  }
+}
+```
+
+State modifiers return the factory instance, so they can be chained:
+
+```typescript
+const factory = new UserFactory().admin().unverified()
+```
+
+## Building instances
+
+### make — without persistence
+
+`make()` returns a plain object with the factory's attributes. It does not touch the database:
+
+```typescript
+const attrs = new UserFactory().make()
+// { email: 'alice@example.com', firstName: 'Alice', ... }
+
+const adminAttrs = new UserFactory().admin().make()
+// { email: '...', firstName: '...', role: 'admin' }
+```
+
+`makeMany()` returns an array:
+
+```typescript
+const users = new UserFactory().count(5).makeMany()
+// Array of 5 user attribute objects
+```
+
+### create — with database persistence
+
+`create()` inserts a record into the database and returns the created model:
+
+```typescript
+const user = await new UserFactory().create(db)
+// User record created in database
+```
+
+`createMany()` inserts multiple records:
+
+```typescript
+const result = await new UserFactory().count(10).createMany(db)
+// { count: 10 }
+```
+
+`createManyAndReturn()` inserts and returns all created records:
+
+```typescript
+const users = await new UserFactory().count(5).createManyAndReturn(db)
+// Array of 5 User records from the database
+```
+
+## Sequence
+
+The `Sequence` class generates unique sequential values, useful for fields that must be unique:
+
+```typescript
+import { Sequence } from '@stratal/framework/factory'
+
+const emailSeq = new Sequence((n) => `user${n}@example.com`)
+
+export class UserFactory extends Factory<User, UserCreateInput> {
+  protected model = 'user'
+
+  protected definition(): UserCreateInput {
+    return {
+      email: emailSeq.next(), // user1@example.com, user2@example.com, ...
+      firstName: this.faker.person.firstName(),
+    }
+  }
+}
+```
+
+| Method | Description |
+| --- | --- |
+| `next()` | Returns the next value and increments the counter |
+| `peek()` | Returns the next value without incrementing |
+| `reset()` | Resets the counter back to 1 |
+
+When no generator function is provided, `Sequence` returns incrementing numbers:
+
+```typescript
+const seq = new Sequence()
+seq.next() // 1
+seq.next() // 2
+```
+
+## Usage in tests
+
+Factories work naturally with Stratal's testing module:
+
+```typescript
+import { Test, type TestingModule } from '@stratal/testing'
+import { DI_TOKENS } from 'stratal/di'
+import { UserFactory } from './user.factory'
+
+describe('UsersController', () => {
+  let module: TestingModule
+
+  beforeEach(async () => {
+    module = await Test.createTestingModule({
+      imports: [UsersModule],
+    }).compile()
+  })
+
+  it('should list users', async () => {
+    const db = module.get(DI_TOKENS.Database)
+    await new UserFactory().count(3).createMany(db)
+
+    const response = await module.http.get('/api/users').send()
+    response.assertOk()
+  })
+})
+```
+
+## Next steps
+
+- [Seeders](/testing/seeders/) for populating databases with factories.
+- [Testing Module](/testing/testing-module/) for creating test modules and overriding providers.
+- [Database](/framework/database/) for configuring the database connection used by factories.

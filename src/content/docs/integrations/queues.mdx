@@ -256,20 +256,16 @@ With the sync provider, `dispatch` blocks until the consumer finishes processing
 
 ## Worker setup
 
-To handle queue messages in production, your worker class must extend `StratalWorker`. The `queue` method is already implemented in the base class:
+To handle queue messages in production, export a `Stratal` instance. The `queue` handler is built in:
 
 ```typescript
-import { StratalWorker } from 'stratal/worker'
+import { Stratal } from 'stratal'
 import { AppModule } from './app.module'
 
-export default class Worker extends StratalWorker {
-  protected configure() {
-    return { module: AppModule }
-  }
-}
+export default new Stratal({ module: AppModule })
 ```
 
-When a batch of messages arrives from Cloudflare Queues, `StratalWorker` calls `app.handleQueue(batch, queueName)`, which:
+When a batch of messages arrives from Cloudflare Queues, `Stratal` calls `app.handleQueue(batch, queueName)`, which:
 
 1. Extracts the locale from the first message's metadata for i18n context.
 2. Creates a request scope so consumers can use request-scoped dependencies.

@@ -1,0 +1,137 @@
+---
+title: Auth
+description: Authentication with Better Auth, session management, and request-scoped auth context.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@stratal/framework` integrates with [Better Auth](https://www.better-auth.com/) to provide authentication, session management, and a request-scoped `AuthContext` for accessing the authenticated user throughout your application.
+
+## Setup
+
+### Install dependencies
+
+```bash
+yarn add @stratal/framework
+```
+
+### Configure AuthModule
+
+Use `AuthModule.forRootAsync()` to configure authentication with async options:
+
+```typescript
+import { Module } from 'stratal/module'
+import { DI_TOKENS } from 'stratal/di'
+import { CONFIG_TOKENS, type ConfigService } from 'stratal/config'
+import { AuthModule } from '@stratal/framework/auth'
+
+@Module({
+  imports: [
+    AuthModule.forRootAsync({
+      inject: [DI_TOKENS.Database, CONFIG_TOKENS.ConfigService],
+      useFactory: (db, config: ConfigService) => ({
+        database: db,
+        secret: config.get('AUTH_SECRET'),
+        baseURL: config.get('AUTH_BASE_URL'),
+        // ... other Better Auth options
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+The factory receives resolved dependencies and returns a Better Auth options object. Refer to the [Better Auth documentation](https://www.better-auth.com/docs) for all available options.
+
+## Auth controller
+
+Create a controller to proxy all authentication requests to Better Auth's handler:
+
+```typescript
+import { Controller, type IController, type RouterContext } from 'stratal/router'
+import { inject } from 'stratal/di'
+import { AUTH_SERVICE, type AuthService } from '@stratal/framework/auth'
+
+@Controller('/api/auth')
+export class AuthController implements IController {
+  constructor(@inject(AUTH_SERVICE) private readonly authService: AuthService) {}
+
+  async handle(ctx: RouterContext) {
+    return this.authService.auth.handler(ctx.c.req.raw)
+  }
+}
+```
+
+This controller catches all requests under `/api/auth/*` and forwards them to Better Auth, which handles sign-up, sign-in, session management, and all other auth endpoints.
+
+## AuthContext
+
+`AuthContext` is a request-scoped service that holds the authenticated user's information for the current request. Inject it using `DI_TOKENS.AuthContext`:
+
+```typescript
+import { Transient, inject, DI_TOKENS } from 'stratal/di'
+import { AuthContext } from '@stratal/framework/context'
+
+@Transient()
+export class ProfileService {
+  constructor(
+    @inject(DI_TOKENS.AuthContext) private readonly auth: AuthContext,
+  ) {}
+
+  async getProfile() {
+    const userId = this.auth.requireUserId()
+    return this.usersRepository.findById(userId)
+  }
+}
+```
+
+### AuthContext API
+
+| Method | Return type | Description |
+| --- | --- | --- |
+| `isAuthenticated()` | `boolean` | Whether the current request has a valid session |
+| `getUserId()` | `string \| undefined` | The authenticated user's ID, or `undefined` |
+| `requireUserId()` | `string` | The authenticated user's ID. Throws if not authenticated |
+| `getAuthContext()` | `AuthInfo` | The full authentication context object |
+| `clearAuthContext()` | `void` | Clears the authentication state |
+
+<Aside type="note">
+  `AuthContext` is request-scoped, meaning each HTTP request gets its own instance. The auth state is populated automatically by the `AuthModule`'s middleware pipeline before your controller methods run.
+</Aside>
+
+## AuthService
+
+The `AuthService` provides access to the underlying Better Auth instance for advanced operations like session management:
+
+```typescript
+import { Transient, inject } from 'stratal/di'
+import { AUTH_SERVICE, AuthService } from '@stratal/framework/auth'
+
+@Transient()
+export class SessionService {
+  constructor(
+    @inject(AUTH_SERVICE) private readonly authService: AuthService,
+  ) {}
+
+  get auth() {
+    return this.authService.auth
+  }
+}
+```
+
+The `auth` property returns the configured Better Auth instance with full access to its API.
+
+## Middleware pipeline
+
+The `AuthModule` automatically registers two middleware components:
+
+1. **AuthContextMiddleware** — Creates an `AuthContext` instance in the request-scoped container for every request.
+2. **SessionVerificationMiddleware** — Verifies the session token from the request and populates `AuthContext` with the authenticated user's information.
+
+These middleware run before your controller methods, so `AuthContext` is always available and populated when your code executes.
+
+## Next steps
+
+- [Auth Guard](/framework/auth-guard/) for protecting routes with authentication checks.
+- [RBAC](/framework/rbac/) for role-based access control on top of auth.
+- [Database](/framework/database/) for configuring the database used by Better Auth.

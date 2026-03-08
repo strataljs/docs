@@ -9,23 +9,19 @@ Stratal includes a built-in logging system with structured output, configurable 
 
 ## Configuration
 
-Configure logging in the `configure()` method of your worker:
+Pass logging options when creating your `Stratal` instance:
 
 ```typescript
-import { StratalWorker } from 'stratal/worker'
+import { Stratal } from 'stratal'
 import { AppModule } from './app.module'
 
-export default class Worker extends StratalWorker {
-  protected configure() {
-    return {
-      module: AppModule,
-      logging: {
-        level: 'info',
-        formatter: 'json',
-      },
-    }
-  }
-}
+export default new Stratal({
+  module: AppModule,
+  logging: {
+    level: 'info',
+    formatter: 'json',
+  },
+})
 ```
 
 | Option | Type | Default | Description |
@@ -156,15 +152,13 @@ Error stack traces are printed below the context when present.
 Switch to the pretty formatter in development:
 
 ```typescript
-protected configure() {
-  return {
-    module: AppModule,
-    logging: {
-      level: 'debug',
-      formatter: 'pretty',
-    },
-  }
-}
+export default new Stratal({
+  module: AppModule,
+  logging: {
+    level: 'debug',
+    formatter: 'pretty',
+  },
+})
 ```
 
 ## Transports
