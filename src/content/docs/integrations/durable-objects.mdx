@@ -1,0 +1,188 @@
+---
+title: Durable Objects
+description: Build stateful Durable Objects with full dependency injection using StratalDurableObject — access DI services, logging, and shared providers inside your DO methods.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal provides `StratalDurableObject`, a base class that extends Cloudflare's native `DurableObject` with full access to your application's DI container. This lets your Durable Objects resolve services, use logging, and share the same providers as the rest of your application.
+
+## Prerequisites
+
+Your worker entry file must export a `Stratal` instance as the **default export**. The worker base classes use the static singleton to resolve the application and its DI container at runtime.
+
+```typescript
+// src/index.ts
+import { Stratal } from 'stratal'
+import { AppModule } from './app.module'
+
+export default new Stratal({ module: AppModule })
+```
+
+## Setup
+
+### 1. Configure wrangler.jsonc
+
+Add a `durable_objects` binding and a migration entry for your Durable Object class:
+
+```jsonc
+{
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "TASK_COUNTER",
+        "class_name": "TaskCounter"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["TaskCounter"]
+    }
+  ]
+}
+```
+
+### 2. Export the class from your worker entry
+
+Cloudflare requires Durable Object classes to be **named exports** from the worker entry file:
+
+```typescript
+// src/index.ts
+import { Stratal } from 'stratal'
+import { AppModule } from './app.module'
+
+export { TaskCounter } from './task/task-counter'
+
+export default new Stratal({ module: AppModule })
+```
+
+## Usage
+
+Extend `StratalDurableObject` and use `this.runInScope()` to access the DI container inside your methods:
+
+```typescript
+import { StratalDurableObject } from 'stratal/workers'
+import { TaskService } from './task.service'
+
+export class TaskCounter extends StratalDurableObject {
+  async increment(userId: string): Promise<number> {
+    // Use Durable Object storage directly via this.ctx
+    const current = (await this.ctx.storage.get<number>('count')) ?? 0
+    const next = current + 1
+    await this.ctx.storage.put('count', next)
+
+    // Access DI services inside runInScope
+    await this.runInScope(async (container) => {
+      const taskService = container.resolve(TaskService)
+      console.log(`User ${userId} now has ${next} tasks (total: ${taskService.count()})`)
+    })
+
+    return next
+  }
+
+  async getCount(): Promise<number> {
+    return (await this.ctx.storage.get<number>('count')) ?? 0
+  }
+}
+```
+
+### How `runInScope` works
+
+When you call `this.runInScope(callback)`, Stratal:
+
+1. Resolves the `Stratal` application via the static singleton.
+2. Creates a new **request-scoped** DI container.
+3. Registers `DI_TOKENS.DurableObjectState` (the DO's `ctx`) and `DI_TOKENS.DurableObjectId` (the DO's `ctx.id`) into the scoped container.
+4. Invokes your callback with the container, so you can resolve any registered service.
+
+<Aside type="tip">
+  You can mix direct `this.ctx.storage` access with DI services freely. Use storage for DO-specific state and DI services for shared business logic.
+</Aside>
+
+### DI tokens available in scope
+
+Inside `runInScope`, two additional tokens are available beyond the standard DI tokens:
+
+| Token | Type | Description |
+| --- | --- | --- |
+| `DI_TOKENS.DurableObjectState` | `DurableObjectState` | The Durable Object's state context (`this.ctx`) |
+| `DI_TOKENS.DurableObjectId` | `DurableObjectId` | The Durable Object's unique ID (`this.ctx.id`) |
+
+You can inject these into any service resolved within the scope:
+
+```typescript
+import { injectable, inject } from 'stratal/di'
+import { DI_TOKENS } from 'stratal/di'
+
+@injectable()
+export class StorageService {
+  constructor(
+    @inject(DI_TOKENS.DurableObjectState) private readonly state: DurableObjectState,
+  ) {}
+
+  async get<T>(key: string): Promise<T | undefined> {
+    return this.state.storage.get<T>(key)
+  }
+}
+```
+
+## Calling a Durable Object from a controller
+
+To interact with your Durable Object from an HTTP handler, inject the Cloudflare environment via the constructor and use `this.env` to access bindings:
+
+```typescript
+import { exports } from 'cloudflare:workers'
+import type { StratalEnv } from 'stratal'
+import { DI_TOKENS, inject } from 'stratal/di'
+import { Controller, type IController, Route, type RouterContext } from 'stratal/router'
+import { z } from 'stratal/validation'
+
+@Controller('/api/tasks/user/:userId/count')
+export class TaskCountController implements IController {
+  constructor(
+    @inject(DI_TOKENS.CloudflareEnv) private readonly env: StratalEnv
+  ) {}
+
+  @Route({
+    response: z.object({ count: z.number() }),
+    summary: 'Get the per-user task count from Durable Object storage',
+    params: z.object({
+      userId: z.string().describe('User ID')
+    }).openapi('userId')
+  })
+  async index(ctx: RouterContext) {
+    const userId = ctx.param('userId')
+    const counterId = this.env.TASK_COUNTER.idFromName(userId)
+    const counter = this.env.TASK_COUNTER.get(counterId)
+    const count = await counter.getCount()
+
+    return ctx.json({ count })
+  }
+}
+```
+
+### Using `exports` for same-worker access
+
+If your Durable Object is defined in the **same worker**, you can also access it via the `exports` helper from `cloudflare:workers` instead of going through `this.env`:
+
+```typescript
+import { exports } from 'cloudflare:workers'
+
+// Inside a controller method
+const counterId = exports.TaskCounter.idFromName(userId)
+const counter = exports.TaskCounter.get(counterId)
+const counterValue = await counter.increment(userId)
+```
+
+<Aside type="note">
+  The `TASK_COUNTER` binding name must match the `name` field in your `wrangler.jsonc` Durable Object binding configuration. The `exports` pattern does not require a wrangler binding — it directly references the named export from your worker entry file.
+</Aside>
+
+## Next steps
+
+- [Dependency Injection](/core-concepts/dependency-injection/) to understand how the DI container and scoping works.
+- [Modules](/core-concepts/modules/) to learn how to organize providers that your Durable Objects consume.
+- [Service Bindings](/integrations/service-bindings/) for cross-worker RPC with DI support.
+- [Workflows](/integrations/workflows/) for multi-step orchestration with DI support.

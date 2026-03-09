@@ -83,6 +83,9 @@ export default defineConfig({
                         { label: 'Email', slug: 'integrations/email' },
                         { label: 'Internationalization', slug: 'integrations/i18n' },
                         { label: 'Logging', slug: 'integrations/logging' },
+                        { label: 'Durable Objects', slug: 'integrations/durable-objects' },
+                        { label: 'Service Bindings', slug: 'integrations/service-bindings' },
+                        { label: 'Workflows', slug: 'integrations/workflows' },
                     ],
                 },
                 {
