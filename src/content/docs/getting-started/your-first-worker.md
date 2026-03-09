@@ -70,12 +70,14 @@ For now, a single controller is all you need.
 The entry point is the file Wrangler invokes when a request arrives. Create `src/index.ts`:
 
 ```typescript
+import 'reflect-metadata'
 import { Stratal } from 'stratal'
 import { AppModule } from './app.module'
 
 export default new Stratal({ module: AppModule })
 ```
 
+- **`import 'reflect-metadata'`** must appear once at the top of your entrypoint. It enables the decorator metadata that Stratal's dependency injection (powered by `tsyringe`) relies on.
 - **`Stratal`** is the framework entry point. It eagerly bootstraps the module system, router, and DI container.
 - The `module` option points to your root module.
 
