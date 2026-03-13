@@ -1,3 +1,9 @@
+@layer base, starlight, theme, components, utilities;
+
+@import '@astrojs/starlight-tailwind';
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
 /* Dark mode (default) */
 :root {
 	--sl-color-accent-low: hsl(165, 50%, 13%);
@@ -12,4 +18,201 @@
 	--sl-color-accent: hsl(165, 90%, 30%);
 	--sl-color-accent-high: hsl(165, 80%, 20%);
 	--sl-hue-blue: 165;
+}
+
+/* ===== Landing page styles ===== */
+
+/* Force text colors in landing sections (override Starlight defaults) */
+.landing-section h1,
+.landing-section h2,
+.landing-section h3 {
+	color: var(--sl-color-white) !important;
+}
+
+.landing-section p,
+.landing-section code,
+.landing-section pre {
+	color: var(--sl-color-text) !important;
+}
+
+/* Dot grid background pattern */
+.landing-dot-grid {
+	background-image: radial-gradient(circle, currentColor 1px, transparent 1px);
+	background-size: 24px 24px;
+}
+
+/* Gradient text effect */
+.landing-gradient-text {
+	background: linear-gradient(135deg, var(--sl-color-accent-high) 0%, var(--sl-color-accent) 100%) !important;
+	-webkit-background-clip: text !important;
+	-webkit-text-fill-color: transparent !important;
+	background-clip: text !important;
+}
+
+/* Glass morphism card */
+.landing-glass-card {
+	background: color-mix(in srgb, var(--sl-color-white) 5%, transparent);
+	backdrop-filter: blur(16px);
+	border: 1px solid color-mix(in srgb, var(--sl-color-white) 10%, transparent);
+}
+
+.landing-glass-card-hover {
+	transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.landing-glass-card-hover:hover {
+	border-color: color-mix(in srgb, var(--sl-color-accent) 40%, transparent);
+	box-shadow: 0 0 24px color-mix(in srgb, var(--sl-color-accent) 15%, transparent);
+}
+
+/* Primary CTA button */
+.landing-btn-primary {
+	background-color: var(--sl-color-accent);
+	color: var(--sl-color-black) !important;
+	box-shadow: 0 0 20px color-mix(in srgb, var(--sl-color-accent) 40%, transparent);
+	text-decoration: none !important;
+}
+
+.landing-btn-primary:hover {
+	filter: brightness(1.1);
+	box-shadow: 0 0 30px color-mix(in srgb, var(--sl-color-accent) 60%, transparent);
+	color: var(--sl-color-black) !important;
+	text-decoration: none !important;
+}
+
+/* Ghost button */
+.landing-btn-ghost {
+	border: 1px solid color-mix(in srgb, var(--sl-color-white) 20%, transparent);
+	color: var(--sl-color-white) !important;
+	text-decoration: none !important;
+}
+
+.landing-btn-ghost:hover {
+	background: color-mix(in srgb, var(--sl-color-white) 8%, transparent);
+	border-color: color-mix(in srgb, var(--sl-color-white) 30%, transparent);
+	color: var(--sl-color-white) !important;
+	text-decoration: none !important;
+}
+
+/* Glow pulse animation for hero code block */
+.landing-glow-pulse {
+	background: radial-gradient(ellipse at center, var(--sl-color-accent), transparent 70%);
+	animation: landing-glow-breathe 4s ease-in-out infinite;
+}
+
+@keyframes landing-glow-breathe {
+	0%, 100% { opacity: 0.15; }
+	50% { opacity: 0.25; }
+}
+
+/* Syntax highlighting (fixed colors — code blocks always have dark bg) */
+.sl-syntax-keyword { color: #c678dd; }
+.sl-syntax-string { color: #98c379; }
+.sl-syntax-comment { color: #7f848e; font-style: italic; }
+.sl-syntax-decorator { color: #e5c07b; }
+.sl-syntax-type { color: #61afef; }
+.sl-syntax-punctuation { color: #abb2bf; }
+
+/* Card divider (theme-aware border) */
+.landing-card-divider {
+	border-bottom: 1px solid color-mix(in srgb, var(--sl-color-white) 10%, transparent);
+}
+
+/* Code panel — always dark background for code blocks */
+.landing-code-panel {
+	background: rgba(30, 30, 30, 0.95) !important;
+	border-color: rgba(255, 255, 255, 0.1) !important;
+}
+.landing-code-panel pre,
+.landing-code-panel code {
+	color: #abb2bf !important;
+}
+
+/* QuickStart connecting line */
+.landing-connect-line {
+	left: 23px;
+	background: linear-gradient(to bottom, var(--sl-color-accent), transparent);
+}
+@media (min-width: 640px) {
+	.landing-connect-line { left: 27px; }
+}
+
+/* Mobile code wrapping */
+@media (max-width: 639px) {
+	.landing-code-panel pre {
+		word-break: break-all;
+		white-space: pre-wrap;
+	}
+}
+
+/* Hide default Starlight content wrapper padding on homepage */
+[data-page-type="splash"] .sl-container {
+	max-width: none;
+	padding-inline: 0;
+}
+
+[data-page-type="splash"] main .content-panel {
+	padding: 0;
+}
+
+[data-page-type="splash"] main .content-panel > :first-child {
+	max-width: none;
+}
+
+/* Full-width hero glow — break out of Starlight parent containers */
+[data-page-type="splash"] .main-frame { padding-inline-start: 0; }
+[data-page-type="splash"] .main-pane { width: 100%; max-width: none; }
+[data-page-type="splash"] .sl-container > * { max-width: none; }
+[data-page-type="splash"] .sl-container > * + * { margin-top: 0; }
+
+/* Landing sections spacing */
+.landing-section {
+	width: 100%;
+}
+
+/* Subtitle text color */
+.landing-subtitle {
+	color: var(--sl-color-gray-3) !important;
+}
+
+/* Code text in landing glass cards */
+.landing-glass-card pre,
+.landing-glass-card code {
+	color: var(--sl-color-gray-1) !important;
+}
+
+/* Quick start code highlight */
+.landing-code-accent {
+	color: var(--sl-color-accent-high) !important;
+}
+
+/* Step number badge */
+.landing-step-badge {
+	background-color: var(--sl-color-accent);
+	color: var(--sl-color-black);
+}
+
+/* Feature card description */
+.landing-card-desc {
+	color: var(--sl-color-gray-3) !important;
+}
+
+/* AI skills card border */
+.landing-ai-skills-card {
+	border-color: color-mix(in srgb, var(--sl-color-accent) 50%, transparent);
+}
+
+/* Divider line (QuickStart "Or, set up manually") */
+.landing-divider-line {
+	background: color-mix(in srgb, var(--sl-color-white) 10%, transparent);
+}
+
+/* Light mode overrides — only opacity/intensity adjustments */
+:root[data-theme='light'] .landing-glow-pulse { opacity: 0.05; }
+:root[data-theme='light'] .landing-dot-grid { opacity: 0.02; }
+:root[data-theme='light'] .landing-gradient-text {
+	background: linear-gradient(135deg, var(--sl-color-accent) 0%, var(--sl-color-accent-high) 100%) !important;
+	-webkit-background-clip: text !important;
+	-webkit-text-fill-color: transparent !important;
+	background-clip: text !important;
 }

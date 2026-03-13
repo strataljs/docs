@@ -3,40 +3,18 @@ title: Stratal
 description: Stratal is a type-safe, modular framework purpose-built for Cloudflare Workers. Build scalable edge applications with dependency injection, automatic OpenAPI docs, and first-class support for Workers primitives.
 template: splash
 hero:
-  tagline: A modular Cloudflare Workers framework with automatic OpenAPI documentation, dependency injection, queue consumers, cron jobs, and type-safe configuration.
-  image:
-    file: ../../assets/logo.webp
-  actions:
-    - text: Get Started
-      link: /getting-started/installation/
-      icon: right-arrow
-    - text: View on GitHub
-      link: https://github.com/strataljs/stratal
-      icon: external
-      variant: minimal
+  tagline: ""
+  actions: []
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import { CodeShowcase } from '../../components/landing/CodeShowcase';
+import { FeaturesGrid } from '../../components/landing/FeaturesGrid';
+import { QuickStart } from '../../components/landing/QuickStart';
+import { WhyStratal } from '../../components/landing/WhyStratal';
+import { FooterCTA } from '../../components/landing/FooterCTA';
 
-## Why Stratal?
-
-<CardGrid stagger>
-	<Card title="Automatic OpenAPI Docs" icon="open-book">
-		Generate OpenAPI specifications automatically from your route definitions and type annotations.
-	</Card>
-	<Card title="NestJS-style Modules" icon="puzzle">
-		Organize your application into cohesive, reusable modules with clear boundaries and encapsulation.
-	</Card>
-	<Card title="Dependency Injection" icon="setting">
-		Built-in DI container for clean, testable architecture without manual wiring.
-	</Card>
-	<Card title="Convention-based REST" icon="rocket">
-		Define RESTful endpoints with decorators and conventions that reduce boilerplate.
-	</Card>
-	<Card title="Queues, Cron & Storage" icon="cloudflare">
-		First-class support for Workers Queues, Cron Triggers, KV, R2, D1, and Durable Objects.
-	</Card>
-	<Card title="Guards, i18n & Email" icon="approve-check-circle">
-		Built-in middleware for authentication guards, internationalization, and email via MailChannels.
-	</Card>
-</CardGrid>
+<CodeShowcase client:visible />
+<FeaturesGrid client:visible />
+<QuickStart client:visible />
+<WhyStratal client:visible />
+<FooterCTA client:visible />

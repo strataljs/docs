@@ -1,0 +1,13 @@
+---
+import type { Props } from '@astrojs/starlight/props';
+import { HeroSection } from './HeroSection';
+
+const { id } = Astro.locals.starlightRoute;
+const isHomepage = id === '' || id === 'index';
+---
+
+{isHomepage ? (
+  <HeroSection client:load />
+) : (
+  <slot />
+)}
