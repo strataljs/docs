@@ -11,21 +11,21 @@ export default new Stratal({
 
 export function HeroSection() {
   return (
-    <section className="landing-section relative overflow-hidden py-24 md:py-32 lg:py-40">
+    <section className="landing-section relative overflow-hidden py-24 md:py-40">
       <GlowBackground glowPosition="top-right" glowOpacity={0.2} />
 
       <div className="relative mx-auto max-w-6xl px-6">
-        <div className="grid items-center gap-12 lg:grid-cols-2 lg:gap-16">
+        <div className="grid items-center gap-12 md:grid-cols-2 md:gap-16">
           {/* Left: Text */}
           <div>
             <motion.h1
-              className="text-4xl font-bold tracking-tight sm:text-5xl lg:text-6xl"
+              className="text-4xl font-bold tracking-tight md:text-5xl lg:text-6xl"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
             >
               Build Workers.{' '}
-              <span className="landing-gradient-text">Not Scaffolding.</span>
+              <span className="landing-gradient-text block">Not Scaffolding.</span>
             </motion.h1>
 
             <motion.p

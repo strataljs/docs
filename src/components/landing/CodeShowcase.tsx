@@ -74,7 +74,7 @@ export function CodeShowcase() {
           </h2>
         </AnimatedSection>
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 md:grid-cols-2">
           <AnimatedSection>
             <CodePanel title="worker.ts" label="Before" code={beforeCode} labelColor="#e5534b" />
           </AnimatedSection>

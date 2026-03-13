@@ -20,6 +20,12 @@ const reasons = [
     description:
       'Structured patterns that AI coding agents can follow and extend. Conventions + OpenAPI specs = code that writes itself.',
   },
+  {
+    icon: '🔒',
+    title: 'Type-Safe End to End',
+    description:
+      'Zod schemas, typed bindings, and decorator metadata catch errors at compile time, not in production.',
+  },
 ];
 
 export function WhyStratal() {
@@ -32,7 +38,7 @@ export function WhyStratal() {
           </h2>
         </AnimatedSection>
 
-        <StaggerContainer className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+        <StaggerContainer className="grid gap-8 sm:grid-cols-2 lg:grid-cols-4">
           {reasons.map((reason) => (
             <StaggerItem key={reason.title}>
               <div className="text-center">
