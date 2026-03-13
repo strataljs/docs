@@ -83,7 +83,7 @@ export function QuickStart() {
                       <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
                     </div>
                     <div className="p-4">
-                      <code className="text-xs sm:text-sm">
+                      <code className="text-xs sm:text-sm p-0">
                         <span style={{ color: 'var(--sl-color-gray-3)' }}>$ </span>
                         <span className="landing-code-accent">{step.code}</span>
                       </code>
