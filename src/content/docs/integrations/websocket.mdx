@@ -1,0 +1,160 @@
+---
+title: WebSocket
+description: Build real-time WebSocket gateways with the @Gateway decorator, event handlers, and GatewayContext.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal provides first-class WebSocket support through the `stratal/websocket` module, built on top of [Cloudflare Workers WebSocket API](https://developers.cloudflare.com/workers/runtime-apis/websockets/). You define WebSocket endpoints using a decorator-based gateway pattern that mirrors the controller pattern you already know.
+
+## Creating a gateway
+
+Use the `@Gateway()` decorator to mark a class as a WebSocket gateway. The decorator takes a route path, just like `@Controller()`:
+
+```typescript
+import { Gateway, OnMessage, OnClose, type GatewayContext } from 'stratal/websocket'
+
+@Gateway('/ws/chat')
+class ChatGateway {
+  @OnMessage()
+  handleMessage(evt: MessageEvent, ctx: GatewayContext) {
+    ctx.send(`echo:${evt.data as string}`)
+  }
+
+  @OnClose()
+  handleClose(evt: CloseEvent, ctx: GatewayContext) {
+    console.log('Client disconnected')
+  }
+}
+```
+
+The `@Gateway()` decorator internally applies `@Transient()`, so each WebSocket connection gets a fresh instance resolved from the DI container. You can inject dependencies through the constructor just like any other provider.
+
+## Event handlers
+
+Decorate methods with event decorators to handle WebSocket lifecycle events:
+
+| Decorator | Event signature | Description |
+| --- | --- | --- |
+| `@OnMessage()` | `(evt: MessageEvent, ctx: GatewayContext)` | Called when a message is received |
+| `@OnClose()` | `(evt: CloseEvent, ctx: GatewayContext)` | Called when the connection closes |
+| `@OnError()` | `(evt: Event, ctx: GatewayContext)` | Called when a WebSocket error occurs |
+
+Each gateway can have at most one handler per event type. All three are optional — define only the ones you need.
+
+```typescript
+@Gateway('/ws/chat')
+class ChatGateway {
+  @OnMessage()
+  handleMessage(evt: MessageEvent, ctx: GatewayContext) {
+    const data = evt.data as string
+    ctx.send(`ack:${data}`)
+  }
+
+  @OnClose()
+  handleClose(evt: CloseEvent, ctx: GatewayContext) {
+    console.log(`Closed with code ${evt.code}`)
+  }
+
+  @OnError()
+  handleError(evt: Event, ctx: GatewayContext) {
+    console.error('WebSocket error', evt)
+  }
+}
+```
+
+<Aside type="note">
+  There is no `@OnOpen()` decorator. Cloudflare Workers do not fire an `open` event on server-side WebSockets — the connection is ready as soon as the upgrade completes. Place any initialization logic in your `@OnMessage()` handler or the gateway constructor.
+</Aside>
+
+## GatewayContext
+
+`GatewayContext` extends `RouterContext` with WebSocket-specific methods. Your event handlers receive it as the second argument.
+
+### WebSocket methods
+
+| Method / Property | Type | Description |
+| --- | --- | --- |
+| `send(data)` | `void` | Send a string, `ArrayBuffer`, or `Uint8Array` to the client |
+| `close(code?, reason?)` | `void` | Close the WebSocket connection |
+| `readyState` | `WSReadyState` | Current connection state |
+| `ws` | `WSContext` | The underlying Hono `WSContext` for advanced use |
+
+### Inherited from RouterContext
+
+| Method | Description |
+| --- | --- |
+| `header(name)` | Read a header from the upgrade request |
+| `param(name)` | Read a route parameter |
+| `query(name)` | Read a query string parameter |
+| `getContainer()` | Access the DI container |
+| `getLocale()` | Get the current locale from the i18n context |
+
+```typescript
+@Gateway('/ws/rooms/:roomId')
+class RoomGateway {
+  @OnMessage()
+  handleMessage(evt: MessageEvent, ctx: GatewayContext) {
+    const roomId = ctx.param('roomId')
+    const token = ctx.header('Authorization')
+    ctx.send(`Room ${roomId} received: ${evt.data as string}`)
+  }
+}
+```
+
+## Module registration
+
+Gateways are registered in the `controllers` array of a module, alongside regular controllers. Stratal automatically detects which classes are gateways and registers them as WebSocket routes.
+
+```typescript
+import { Module } from 'stratal/module'
+
+@Module({
+  controllers: [ChatGateway, RoomGateway],
+})
+export class ChatModule {}
+```
+
+<Aside type="caution">
+  Do not apply both `@Gateway()` and `@Controller()` to the same class. Each class should be one or the other — they use different routing mechanisms despite sharing the `controllers` array.
+</Aside>
+
+## Guards
+
+`@UseGuards()` works on gateways the same way it works on controllers. Guards execute during the HTTP upgrade request, before the WebSocket connection is established:
+
+```typescript
+import { UseGuards } from 'stratal/router'
+import { AuthGuard } from './auth.guard'
+
+@UseGuards(AuthGuard)
+@Gateway('/ws/chat')
+class ChatGateway {
+  @OnMessage()
+  handleMessage(evt: MessageEvent, ctx: GatewayContext) {
+    ctx.send(`echo:${evt.data as string}`)
+  }
+}
+```
+
+If a guard rejects the request, the upgrade is denied and the WebSocket connection is never opened.
+
+## API versioning
+
+Versioned paths work the same as controllers. Pass a `version` option in the second argument to `@Gateway()` to register the gateway under a version prefix:
+
+```typescript
+@Gateway('/ws/chat', { version: '1' })
+class ChatGatewayV1 {
+  // Registered at /v1/ws/chat
+}
+```
+
+The `version` option accepts a `string`, `string[]` for multiple versions, or `VERSION_NEUTRAL` to opt out of versioning — identical to the `@Controller()` pattern. See [API Versioning](/core-concepts/versioning/) for full details.
+
+## Next steps
+
+- [WebSocket Testing](/testing/websocket-testing/) for testing gateways with `module.ws()`.
+- [Guards](/guides/guards/) to protect upgrade requests.
+- [Middleware](/guides/middleware/) for shared logic across controllers and gateways.
+- [Durable Objects](/integrations/durable-objects/) for stateful WebSocket connections that persist across requests.

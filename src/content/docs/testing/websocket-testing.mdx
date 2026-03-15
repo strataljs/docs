@@ -1,0 +1,154 @@
+---
+title: WebSocket Testing
+description: Test WebSocket gateways with the module.ws() builder, connection helpers, and message assertions.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal's testing package provides a WebSocket testing API that mirrors the HTTP testing pattern. Use `module.ws()` to build upgrade requests, connect to your gateways, and assert on messages and close events.
+
+## Creating a connection
+
+Access the WebSocket builder through `module.ws()` and call `connect()` to establish a connection:
+
+```typescript
+const ws = await module.ws('/ws/chat').connect()
+ws.send('hello')
+await ws.assertMessage('echo:hello')
+ws.close()
+```
+
+The `connect()` method sends an HTTP upgrade request to your application and returns a `TestWsConnection` if the upgrade succeeds. If the server responds with anything other than `101 Switching Protocols`, the test fails immediately.
+
+## Building the upgrade request
+
+`module.ws(path)` returns a `TestWsRequest` builder that lets you configure the upgrade request before connecting:
+
+| Method | Returns | Description |
+| --- | --- | --- |
+| `withHeaders(headers)` | `this` | Add custom headers to the upgrade request |
+| `actingAs(user)` | `this` | Authenticate the connection as a specific user |
+| `connect()` | `Promise<TestWsConnection>` | Send the upgrade request and return a live connection |
+
+```typescript
+const ws = await module.ws('/ws/chat')
+  .withHeaders({ 'X-Request-ID': 'test-123' })
+  .connect()
+```
+
+### Authenticated WebSocket
+
+Use `actingAs()` to authenticate the WebSocket connection. This works the same as the HTTP testing `actingAs()` — it creates a session and attaches the auth headers to the upgrade request:
+
+```typescript
+const ws = await module.ws('/ws/chat')
+  .actingAs({ id: user.id })
+  .connect()
+```
+
+## TestWsConnection
+
+Once connected, `TestWsConnection` provides methods for sending data, closing the connection, and asserting on received messages.
+
+### Sending and closing
+
+| Method | Description |
+| --- | --- |
+| `send(data)` | Send a string, `ArrayBuffer`, or `Uint8Array` through the WebSocket |
+| `close(code?, reason?)` | Close the WebSocket connection |
+
+### Assertions
+
+| Method | Returns | Description |
+| --- | --- | --- |
+| `assertMessage(expected, timeout?)` | `Promise<void>` | Assert the next message equals the expected string |
+| `assertClosed(expectedCode?, timeout?)` | `Promise<void>` | Assert the connection closes, optionally with a specific code |
+
+### Waiting for events
+
+| Method | Returns | Description |
+| --- | --- | --- |
+| `waitForMessage(timeout?)` | `Promise<string \| ArrayBuffer>` | Wait for and return the next message |
+| `waitForClose(timeout?)` | `Promise<{ code?: number; reason?: string }>` | Wait for the connection to close |
+
+All timeout parameters default to 5000ms. If no message or close event is received within the timeout, the test fails with a descriptive error.
+
+### Raw access
+
+Use the `raw` property to access the underlying Cloudflare `WebSocket` object for advanced scenarios:
+
+```typescript
+const ws = await module.ws('/ws/chat').connect()
+ws.raw.addEventListener('message', (event) => {
+  // Custom handling
+})
+```
+
+## Full test example
+
+Here is a complete test suite for a chat gateway that echoes messages and handles close events:
+
+```typescript
+import { Test, type TestingModule } from '@stratal/testing'
+import { afterAll, beforeEach, describe, it } from 'vitest'
+import { ChatModule } from '../chat.module'
+
+describe('ChatGateway', () => {
+  let module: TestingModule
+
+  beforeEach(async () => {
+    module = await Test.createTestingModule({
+      imports: [ChatModule],
+    }).compile()
+  })
+
+  afterAll(async () => {
+    await module.close()
+  })
+
+  it('should echo messages', async () => {
+    const ws = await module.ws('/ws/chat').connect()
+
+    ws.send('hello')
+    await ws.assertMessage('echo:hello')
+
+    ws.send('world')
+    await ws.assertMessage('echo:world')
+
+    ws.close()
+  })
+
+  it('should handle close events', async () => {
+    const ws = await module.ws('/ws/chat').connect()
+
+    ws.close(1000, 'Normal closure')
+    await ws.assertClosed(1000)
+  })
+
+  it('should support authenticated connections', async () => {
+    const ws = await module.ws('/ws/chat')
+      .actingAs({ id: 'user-123' })
+      .connect()
+
+    ws.send('auth-check')
+    await ws.assertMessage('echo:auth-check')
+
+    ws.close()
+  })
+
+  it('should wait for messages with custom timeout', async () => {
+    const ws = await module.ws('/ws/chat').connect()
+
+    ws.send('delayed')
+    const message = await ws.waitForMessage(10000)
+
+    ws.close()
+  })
+})
+```
+
+## Next steps
+
+- [WebSocket Integration](/integrations/websocket/) for building gateways with `@Gateway`.
+- [HTTP Testing](/testing/http-testing/) for the equivalent HTTP testing API.
+- [Testing Module](/testing/testing-module/) for creating modules and provider overrides.

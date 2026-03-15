@@ -95,6 +95,7 @@ export default defineConfig({
                   { label: 'Durable Objects', slug: 'integrations/durable-objects' },
                   { label: 'Service Bindings', slug: 'integrations/service-bindings' },
                   { label: 'Workflows', slug: 'integrations/workflows' },
+                  { label: 'WebSocket', slug: 'integrations/websocket' },
               ],
           },
           {
@@ -103,6 +104,8 @@ export default defineConfig({
                   { label: 'Overview', slug: 'testing/overview' },
                   { label: 'Testing Module', slug: 'testing/testing-module' },
                   { label: 'HTTP Testing', slug: 'testing/http-testing' },
+                  { label: 'WebSocket Testing', slug: 'testing/websocket-testing' },
+                  { label: 'SSE Testing', slug: 'testing/sse-testing' },
                   { label: 'Mocks and Fakes', slug: 'testing/mocks-and-fakes' },
                   { label: 'Factories', slug: 'testing/factories' },
                   { label: 'Seeders', slug: 'testing/seeders' },
