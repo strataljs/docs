@@ -55,7 +55,7 @@ export default defineConfig({
                   { label: 'Schemas and Validation', slug: 'openapi/schemas-and-validation' },
                   { label: 'Tags and Security', slug: 'openapi/tags-and-security' },
                   { label: 'Hiding Routes', slug: 'openapi/hiding-routes' },
-                  { label: 'Scalar UI', slug: 'openapi/scalar-ui' },
+                  { label: 'Interactive Docs UI', slug: 'openapi/docs-ui' },
               ],
           },
           {

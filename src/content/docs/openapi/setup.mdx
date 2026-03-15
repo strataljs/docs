@@ -49,7 +49,7 @@ When you call `forRoot()`, your options replace the auto-registered defaults. St
 | `info.version` | `string` | `'1.0.0'` | API version string. |
 | `info.description` | `string` | `undefined` | Optional description for the API. |
 | `jsonPath` | `string` | `'/api/openapi.json'` | Path where the JSON spec is served. |
-| `docsPath` | `string` | `'/api/docs'` | Path where the Scalar UI is served. |
+| `ui` | `OpenAPIUIOptions \| false` | `{ path: '/api/docs' }` | Interactive docs UI configuration. Set to `false` to disable. |
 | `securitySchemes` | `Record<string, object>` | `undefined` | Additional custom security scheme definitions. |
 
 ## Default values
@@ -61,7 +61,6 @@ OpenAPIModule.forRoot()
 // Equivalent to:
 OpenAPIModule.forRoot({
   jsonPath: '/api/openapi.json',
-  docsPath: '/api/docs',
   info: {
     title: 'API',
     version: '1.0.0',

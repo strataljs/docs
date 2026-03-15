@@ -1,13 +1,17 @@
 ---
-title: Scalar UI
-description: The interactive docs viewer and how to customize it.
+title: Interactive Docs UI
+description: The interactive docs viewer, pluggable renderers, and how to customize them.
 ---
 
-Stratal uses [Scalar](https://scalar.com/) to serve an interactive API reference directly from your worker. Scalar reads the generated OpenAPI spec and renders a browsable, searchable interface where consumers can explore endpoints, view schemas, and try out requests.
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal serves an interactive API reference directly from your worker using [Swagger UI](https://swagger.io/tools/swagger-ui/) by default. The UI reads the generated OpenAPI spec and renders a browsable, searchable interface where consumers can explore endpoints, view schemas, and try out requests.
+
+The renderer is pluggable — you can swap Swagger UI for any renderer that returns a Hono middleware handler.
 
 ## Accessing the docs
 
-Once the `OpenAPIModule` is registered, the interactive docs are available at the configured `docsPath`. With default settings, start your dev server and visit:
+Once the `OpenAPIModule` is registered, the interactive docs are available at the configured UI path. With default settings, start your dev server and visit:
 
 ```
 http://localhost:8787/api/docs
@@ -21,18 +25,14 @@ http://localhost:8787/api/openapi.json
 
 You can import this URL into external tools like Postman, Insomnia, or any OpenAPI-compatible client.
 
-## Built-in theme
-
-Scalar is configured with the `deepSpace` theme by default. Telemetry is disabled. No additional configuration is needed for the UI to work.
-
 ## Customizing the docs path
 
-Change where the UI and JSON spec are served by passing `docsPath` and `jsonPath` to `forRoot()`:
+Change where the UI is served by passing the `ui` option to `forRoot()`:
 
 ```typescript
 OpenAPIModule.forRoot({
   info: { title: 'My API', version: '2.0.0' },
-  docsPath: '/docs',
+  ui: { path: '/docs' },
   jsonPath: '/openapi.json',
 })
 ```
@@ -40,6 +40,65 @@ OpenAPIModule.forRoot({
 With this configuration:
 - Interactive docs are at `/docs`
 - JSON spec is at `/openapi.json`
+
+## Using a custom renderer
+
+The `ui.renderer` option accepts a function that receives an `OpenAPIUIContext` and returns a Hono middleware handler. This lets you replace Swagger UI with any documentation renderer.
+
+The `OpenAPIUIRenderer` type is defined as:
+
+```typescript
+import type { MiddlewareHandler } from 'hono'
+
+interface OpenAPIUIContext {
+  specUrl: string
+  title: string
+}
+
+type OpenAPIUIRenderer = (context: OpenAPIUIContext) => MiddlewareHandler
+```
+
+Here is an example using a custom renderer:
+
+```typescript
+import type { OpenAPIUIRenderer } from 'stratal/openapi'
+
+const myRenderer: OpenAPIUIRenderer = ({ specUrl, title }) => {
+  return (c) => {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head><title>${title}</title></head>
+        <body>
+          <h1>${title}</h1>
+          <p>Spec available at <a href="${specUrl}">${specUrl}</a></p>
+        </body>
+      </html>
+    `
+    return c.html(html)
+  }
+}
+
+OpenAPIModule.forRoot({
+  info: { title: 'My API', version: '1.0.0' },
+  ui: { renderer: myRenderer },
+})
+```
+
+## Disabling the UI
+
+Set `ui` to `false` to disable the interactive docs entirely:
+
+```typescript
+OpenAPIModule.forRoot({
+  info: { title: 'My API', version: '1.0.0' },
+  ui: false,
+})
+```
+
+<Aside type="note">
+  Disabling the UI does not affect the JSON spec endpoint. The spec is still served at the configured `jsonPath` and can be imported into external tools.
+</Aside>
 
 ## Runtime overrides
 
