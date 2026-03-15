@@ -60,7 +60,7 @@ The global error handler catches it, translates the message key, and returns the
 
 | Parameter  | Type                      | Description                                         |
 | ---------- | ------------------------- | --------------------------------------------------- |
-| `message`  | `string`                  | An i18n message key or plain string                 |
+| `i18nKey`  | `MessageKeys`             | A type-safe i18n message key (e.g., `'errors.userNotFound'`) |
 | `code`     | `number`                  | A numeric error code from `ERROR_CODES`             |
 | `metadata` | `Record<string, unknown>` | Optional data for logging and message interpolation |
 
