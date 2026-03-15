@@ -28,13 +28,14 @@ const beforeCode = `export default {
 }`;
 
 const afterModuleCode = `@Module({
-  imports: [I18nModule.forRoot({ defaultLocale: 'en', locales: ['en', 'fr'] })],
-  providers: [NotesService],
-  controllers: [NotesController],
+  imports: [
+    I18nModule.forRoot({ defaultLocale: 'en', locales: ['en', 'fr'] }),
+    NotesModule,
+  ],
   consumers: [NotificationConsumer],
   jobs: [CleanupJob],
 })
-export class NotesModule {}`;
+export class AppModule {}`;
 
 const afterEntryCode = `export default new Stratal({
   module: AppModule,
@@ -55,7 +56,7 @@ function CodePanel({ title, label, code, labelColor }: { title: string; label: s
           {label}
         </span>
       </div>
-      <pre className="overflow-x-auto p-5 text-xs sm:text-[13px] leading-relaxed">
+      <pre className="overflow-x-auto p-5 text-xs sm:text-[13px] leading-relaxed mt-0">
         <code>{highlightTS(code)}</code>
       </pre>
     </div>
@@ -79,8 +80,8 @@ export function CodeShowcase() {
             <CodePanel title="worker.ts" label="Before" code={beforeCode} labelColor="#e5534b" />
           </AnimatedSection>
 
-          <AnimatedSection delay={0.15} className="flex flex-col gap-4">
-            <CodePanel title="notes.module.ts" label="After" code={afterModuleCode} labelColor="hsl(165, 82%, 42%)" />
+          <AnimatedSection delay={0.15} className="flex flex-col gap-4 mt-0">
+            <CodePanel title="app.module.ts" label="After" code={afterModuleCode} labelColor="hsl(165, 82%, 42%)" />
             <CodePanel title="index.ts" label="Entry" code={afterEntryCode} labelColor="hsl(165, 82%, 42%)" />
           </AnimatedSection>
         </div>
