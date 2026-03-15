@@ -9,27 +9,20 @@ Stratal supports URI-based API versioning. When enabled, controller routes are a
 
 ## Enabling versioning
 
-Pass a `versioning` option to `ApplicationConfig` in your worker entrypoint:
+Pass a `versioning` option to the `Stratal` constructor:
 
 ```typescript
-import { Application } from 'stratal'
+import 'reflect-metadata'
+import { Stratal } from 'stratal'
 import { AppModule } from './app.module'
 
-export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
-    const app = new Application({
-      module: AppModule,
-      env,
-      ctx,
-      versioning: {
-        prefix: 'v',        // default
-        defaultVersion: '1', // optional
-      },
-    })
-
-    return app.handle(request)
+export default new Stratal({
+  module: AppModule,
+  versioning: {
+    prefix: 'v',        // default
+    defaultVersion: '1', // optional
   },
-}
+})
 ```
 
 Once versioning is enabled, controllers can declare which version(s) they belong to.
@@ -101,10 +94,8 @@ The health endpoint stays at `/health` regardless of any `defaultVersion` settin
 The `defaultVersion` option applies a version to all controllers that don't explicitly set one:
 
 ```typescript
-const app = new Application({
+export default new Stratal({
   module: AppModule,
-  env,
-  ctx,
   versioning: {
     defaultVersion: '1',
   },
