@@ -28,7 +28,7 @@ const beforeCode = `export default {
 }`;
 
 const afterModuleCode = `@Module({
-  imports: [StorageModule.forRoot({ bucket: 'uploads' })],
+  imports: [I18nModule.forRoot({ defaultLocale: 'en', locales: ['en', 'fr'] })],
   providers: [NotesService],
   controllers: [NotesController],
   consumers: [NotificationConsumer],
