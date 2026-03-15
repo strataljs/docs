@@ -38,6 +38,7 @@ The `@Controller` decorator takes two arguments:
 | `tags`          | `string[]`   | OpenAPI tags applied to every route in the controller |
 | `security`      | `SecurityScheme[]` | Security schemes applied to every route         |
 | `hideFromDocs`  | `boolean`    | Exclude all routes from the OpenAPI specification     |
+| `version`       | `string \| string[] \| typeof VERSION_NEUTRAL` | API version(s) for this controller (see [Versioning](/core-concepts/versioning/)) |
 
 ```typescript
 @Controller('/api/admin', {
@@ -239,6 +240,7 @@ For a complete guide on writing guards, see the [Guards guide](/guides/guards/).
 ## Next steps
 
 - [HTTP Method Decorators](/core-concepts/http-method-decorators/) for explicit `@Get`, `@Post`, etc. when you need custom paths or non-CRUD endpoints.
+- [Versioning](/core-concepts/versioning/) to add URI-based API versioning to your controllers.
 - [Modules](/core-concepts/modules/) to learn how controllers are registered in modules.
 - [Dependency Injection](/core-concepts/dependency-injection/) to inject services into your controllers.
 - [Guards guide](/guides/guards/) for writing custom guards.

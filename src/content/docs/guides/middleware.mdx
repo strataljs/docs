@@ -97,7 +97,7 @@ consumer
   .forRoutes(UsersController, OrdersController)
 ```
 
-**Route info** applies to a specific path and optionally a specific HTTP method:
+**Route info** applies to a specific path and optionally a specific HTTP method or [version](/core-concepts/versioning/):
 
 ```typescript
 consumer
@@ -105,6 +105,7 @@ consumer
   .forRoutes(
     { path: '/api/auth/login', method: 'post' },
     { path: '/api/auth/register', method: 'post' },
+    { path: '/api/users', version: '1' }, // matches versioned path /v1/api/users
   )
 ```
 

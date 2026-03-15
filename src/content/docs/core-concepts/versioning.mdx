@@ -1,0 +1,193 @@
+---
+title: API Versioning
+description: URI-based API versioning for controllers, with configurable prefixes, default versions, and version-neutral routes.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal supports URI-based API versioning. When enabled, controller routes are automatically prefixed with a version segment (e.g., `/v1/users`). You can assign versions per controller, set a default version for all controllers, or opt specific controllers out of versioning entirely.
+
+## Enabling versioning
+
+Pass a `versioning` option to `ApplicationConfig` in your worker entrypoint:
+
+```typescript
+import { Application } from 'stratal'
+import { AppModule } from './app.module'
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    const app = new Application({
+      module: AppModule,
+      env,
+      ctx,
+      versioning: {
+        prefix: 'v',        // default
+        defaultVersion: '1', // optional
+      },
+    })
+
+    return app.handle(request)
+  },
+}
+```
+
+Once versioning is enabled, controllers can declare which version(s) they belong to.
+
+## Controller versions
+
+Use the `version` option in `@Controller` to assign a version:
+
+```typescript
+import { Controller, IController, RouterContext } from 'stratal/router'
+
+@Controller('/api/users', { version: '1' })
+export class UsersV1Controller implements IController {
+  index(ctx: RouterContext) {
+    return ctx.json({ users: [], version: 'v1' })
+  }
+}
+```
+
+This registers routes under `/v1/api/users`. A v2 controller can coexist alongside:
+
+```typescript
+@Controller('/api/users', { version: '2' })
+export class UsersV2Controller implements IController {
+  index(ctx: RouterContext) {
+    return ctx.json({ users: [], version: 'v2', pagination: {} })
+  }
+}
+```
+
+### Multiple versions
+
+A single controller can serve multiple versions by passing an array:
+
+```typescript
+@Controller('/api/products', { version: ['1', '2'] })
+export class ProductsController implements IController {
+  index(ctx: RouterContext) {
+    return ctx.json({ products: [] })
+  }
+}
+```
+
+This registers routes at both `/v1/api/products` and `/v2/api/products`.
+
+## VERSION_NEUTRAL
+
+Some controllers, like health checks, should not have a version prefix. Use `VERSION_NEUTRAL` to opt out of versioning entirely:
+
+```typescript
+import { Controller, IController, RouterContext, VERSION_NEUTRAL } from 'stratal/router'
+
+@Controller('/health', { version: VERSION_NEUTRAL })
+export class HealthController implements IController {
+  handle(ctx: RouterContext) {
+    return ctx.json({ status: 'ok' })
+  }
+}
+```
+
+The health endpoint stays at `/health` regardless of any `defaultVersion` setting.
+
+<Aside type="tip">
+  `VERSION_NEUTRAL` is especially useful when versioning is enabled globally with a `defaultVersion`. Without it, even controllers that don't specify a version would inherit the default.
+</Aside>
+
+## Default version
+
+The `defaultVersion` option applies a version to all controllers that don't explicitly set one:
+
+```typescript
+const app = new Application({
+  module: AppModule,
+  env,
+  ctx,
+  versioning: {
+    defaultVersion: '1',
+  },
+})
+```
+
+With this configuration:
+- A controller with no `version` option gets prefixed with `/v1`
+- A controller with `version: '2'` gets prefixed with `/v2`
+- A controller with `version: VERSION_NEUTRAL` gets no prefix
+
+`defaultVersion` also accepts an array to register unversioned controllers under multiple versions:
+
+```typescript
+versioning: {
+  defaultVersion: ['1', '2'],
+}
+```
+
+## Custom prefix
+
+The default prefix is `'v'`, producing paths like `/v1/users`. Change it with the `prefix` option:
+
+```typescript
+versioning: {
+  prefix: 'api/v',
+}
+```
+
+A controller at `/users` with version `'1'` now registers at `/api/v1/users` instead of `/v1/users`.
+
+## Middleware with versioning
+
+When targeting specific routes in middleware configuration, you can use the `version` field in route info objects to match versioned paths:
+
+```typescript
+import { Module } from 'stratal/module'
+import { MiddlewareConfigurable, MiddlewareConsumer } from 'stratal/middleware'
+import { AuthMiddleware } from './auth.middleware'
+
+@Module({
+  controllers: [UsersV1Controller, UsersV2Controller],
+  providers: [AuthMiddleware],
+})
+export class UsersModule implements MiddlewareConfigurable {
+  configure(consumer: MiddlewareConsumer) {
+    // Apply only to v1 users routes
+    consumer
+      .apply(AuthMiddleware)
+      .forRoutes({ path: '/api/users', version: '1' })
+
+    // Apply to multiple versions
+    consumer
+      .apply(AuthMiddleware)
+      .forRoutes({ path: '/api/users', version: ['1', '2'] })
+  }
+}
+```
+
+Stratal resolves the version and prefix automatically — `{ path: '/api/users', version: '1' }` expands to match `/v1/api/users` and its sub-paths.
+
+## Reference
+
+### VersioningOptions
+
+Passed to `ApplicationConfig.versioning`:
+
+| Option           | Type                   | Default | Description                                                  |
+| ---------------- | ---------------------- | ------- | ------------------------------------------------------------ |
+| `prefix`         | `string`               | `'v'`   | Prefix for version segments (e.g., `'v'` → `/v1`, `'api/v'` → `/api/v1`) |
+| `defaultVersion` | `string \| string[]`   | —       | Version applied to controllers without an explicit `version` |
+
+### ControllerOptions.version
+
+| Type                                         | Description                                            |
+| -------------------------------------------- | ------------------------------------------------------ |
+| `string`                                     | Single version (e.g., `'1'` → `/v1/...`)              |
+| `string[]`                                   | Multiple versions (e.g., `['1', '2']`)                 |
+| `typeof VERSION_NEUTRAL`                     | Opt out of versioning — no prefix applied              |
+
+### RouteInfo.version (middleware)
+
+| Type                   | Description                                                      |
+| ---------------------- | ---------------------------------------------------------------- |
+| `string`               | Target a single version (e.g., `'1'` → matches `/v1/...`)       |
+| `string[]`             | Target multiple versions (e.g., `['1', '2']`)                   |
