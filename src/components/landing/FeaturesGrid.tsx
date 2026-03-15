@@ -49,7 +49,7 @@ export function FeaturesGrid() {
             Everything you need to build at the <span className="landing-gradient-text">edge</span>
           </h2>
           <p className="landing-subtitle mx-auto mt-4 max-w-2xl">
-            Stratal handles the scaffolding so you can focus on what your application actually does.
+            Familiar patterns from NestJS and Laravel, purpose-built for Cloudflare Workers. Stratal handles the scaffolding so you can focus on what your application actually does.
           </p>
         </AnimatedSection>
 

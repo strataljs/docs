@@ -73,6 +73,9 @@ export function CodeShowcase() {
           <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
             From boilerplate to <span className="landing-gradient-text">business logic</span>
           </h2>
+          <p className="landing-subtitle mx-auto mt-4 max-w-2xl">
+            If you've used NestJS or Laravel, you'll feel right at home.
+          </p>
         </AnimatedSection>
 
         <div className="grid gap-6 md:grid-cols-2">

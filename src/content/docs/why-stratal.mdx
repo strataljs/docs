@@ -7,7 +7,7 @@ Cloudflare Workers is one of the best platforms for building backend services to
 
 But after running a production project with five Workers, four queues, and seven cron jobs, the structural problems became impossible to ignore. Router setup, input validation, error handling, binding threading. These are not platform problems but scaffolding problems. The same patterns copied across every Worker, every consumer, every workflow processor. I wanted a layer that handled the repetitive parts so I could focus on business logic.
 
-That's what Stratal is. A modular framework that builds DX and structure on top of a great platform. If you just want to start building, head to the [installation guide](/getting-started/installation/).
+That's what Stratal is. A modular framework — inspired by the architecture of NestJS and the conventions of Laravel — that builds DX and structure on top of a great platform. If you just want to start building, head to the [installation guide](/getting-started/installation/).
 
 ## The same scaffold, every time
 
@@ -86,6 +86,8 @@ Stratal is opinionated about routing. Instead of manually registering routes for
 
 Name a method `create` on a `@Controller('/api/users')` and it becomes `POST /api/users` with a `201` default status. Name it `show` and it becomes `GET /api/users/:id`. No route table to maintain, no decorators specifying HTTP verbs. The convention is the configuration.
 
+Laravel developers will recognize this convention — resourceful controllers that map method names to HTTP verbs. Stratal applies the same principle to Workers.
+
 Compare that to manually registering every route with its full path, HTTP method, middleware chain, and handler reference. In the previous project, a single endpoint registration looked like `app.post('/api/courses/:courseId/notes/process/', authMiddleware, validationMiddleware, featureGuard, materialMiddleware, lockMiddleware, handler)` with comments documenting which variables each middleware sets. The convention approach trades some flexibility for consistency that scales.
 
 ## Queues and cron should be declarative
@@ -156,6 +158,8 @@ Stratal's `@Module` decorator eliminates this:
 })
 export class NotesModule {}
 ```
+
+If this looks familiar, it should — Stratal's module system draws directly from NestJS, adapted for the Cloudflare Workers runtime.
 
 Modules import other modules. Providers are registered globally, so any service is available wherever it's injected. When you look at a module definition, you can see exactly what it owns and what it depends on.
 
