@@ -175,6 +175,64 @@ return ctx.redirect('/api/users/1')
 return ctx.redirect('/login', 302)
 ```
 
+### Streaming responses
+
+`RouterContext` provides three methods for streaming data to the client:
+
+#### `stream(callback, onError?)` — Binary / generic streaming
+
+```typescript
+@Get('/download', { response: { schema: z.any(), contentType: 'application/octet-stream' } })
+download(ctx: RouterContext) {
+  return ctx.stream(async (stream) => {
+    await stream.write(new Uint8Array([72, 101, 108, 108, 111]))
+  })
+}
+```
+
+#### `streamText(callback, onError?)` — Text streaming
+
+```typescript
+@Get('/text', { response: { schema: z.any(), contentType: 'text/plain' } })
+text(ctx: RouterContext) {
+  return ctx.streamText(async (stream) => {
+    await stream.write('hello ')
+    await stream.write('world')
+  })
+}
+```
+
+#### `streamSSE(callback, onError?)` — Server-Sent Events
+
+```typescript
+@Get('/events', { response: { schema: z.any(), contentType: 'text/event-stream' } })
+events(ctx: RouterContext) {
+  return ctx.streamSSE(async (stream) => {
+    await stream.writeSSE({ data: 'hello', event: 'message', id: '1' })
+  })
+}
+```
+
+#### Error handling
+
+All three methods accept an optional `onError` callback that is invoked if the streaming function throws:
+
+```typescript
+return ctx.stream(
+  () => {
+    throw new Error('stream error')
+  },
+  async (err, stream) => {
+    await stream.writeln(err.message)
+    await stream.close()
+  }
+)
+```
+
+<Aside type="note">
+  `streamText()` and `streamSSE()` automatically set the `Content-Encoding: Identity` header for Cloudflare Workers compatibility.
+</Aside>
+
 ### Locale and container access
 
 ```typescript
