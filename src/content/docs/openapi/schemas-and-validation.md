@@ -121,6 +121,73 @@ index(ctx: RouterContext) {
 }
 ```
 
+## Custom content types
+
+By default, `body` and `response` schemas use `application/json` as the content type. You can specify a different content type by passing an object instead of a bare Zod schema.
+
+### Request body with custom content type
+
+The `body` property accepts a `RouteBody`, which is either a `ZodType` (defaults to `application/json`) or a `RouteBodyObject`:
+
+```typescript
+type RouteBodyObject = {
+  schema: ZodType
+  contentType?: string // defaults to 'application/json'
+}
+```
+
+For example, to accept `multipart/form-data` for file uploads:
+
+```typescript
+@Route({
+  body: {
+    schema: z.object({
+      file: z.any(),
+      description: z.string().optional(),
+    }),
+    contentType: 'multipart/form-data',
+  },
+  response: z.object({ url: z.string().url() }),
+  summary: 'Upload a file',
+  statusCode: 201,
+})
+async uploadFile(ctx: RouterContext) {
+  // handle file upload
+  return ctx.json({ url: 'https://cdn.example.com/files/doc.pdf' }, 201)
+}
+```
+
+### Response with custom content type
+
+The `response` property accepts a `RouteResponse`, which is either a `ZodType` or a `RouteResponseObject`:
+
+```typescript
+type RouteResponseObject = {
+  schema: ZodType
+  description?: string
+  contentType?: string // defaults to 'application/json'
+}
+```
+
+For example, to return binary data with `application/octet-stream`:
+
+```typescript
+@Route({
+  params: z.object({ id: z.string().uuid() }),
+  response: {
+    schema: z.any(),
+    contentType: 'application/octet-stream',
+    description: 'The raw file contents',
+  },
+  summary: 'Download a file',
+})
+downloadFile(ctx: RouterContext) {
+  // return binary response
+}
+```
+
+> **Note:** Auto-included error responses (400, 401, 403, 404, 409, 500) always use `application/json` regardless of the route's content type.
+
 ## Built-in schemas
 
 Stratal provides several reusable schemas you can import from `stratal/router/schemas`:

@@ -117,10 +117,10 @@ The full `RouteConfig` interface:
 
 | Property        | Type                | Description                                    |
 | --------------- | ------------------- | ---------------------------------------------- |
-| `body`          | `ZodType`           | Validates the request body (POST, PUT, PATCH)  |
+| `body`          | `RouteBody`         | Validates the request body. Accepts a Zod schema (defaults to `application/json`) or a `{ schema, contentType? }` object for custom content types. |
 | `params`        | `ZodObject`         | Validates path parameters                      |
 | `query`         | `ZodObject`         | Validates query string parameters              |
-| `response`      | `RouteResponse`     | Schema for the response body (used in OpenAPI) |
+| `response`      | `RouteResponse`     | Schema for the response body. Accepts a Zod schema (defaults to `application/json`) or a `{ schema, description?, contentType? }` object. |
 | `tags`          | `string[]`          | OpenAPI tags for this route                    |
 | `security`      | `SecurityScheme[]`  | Security schemes for this route                |
 | `summary`       | `string`            | Short OpenAPI summary                          |
