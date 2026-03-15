@@ -16,31 +16,34 @@ Cloudflare Workers run on the `workerd` runtime, which differs from Node.js in s
 ## Install dependencies
 
 ```bash
-yarn add -D @stratal/testing vitest @cloudflare/vitest-pool-workers @cloudflare/workers-types
+yarn add -D @stratal/testing @cloudflare/workers-types vitest
 ```
+
+<Aside type="note">
+  `@stratal/testing` bundles `@cloudflare/vitest-pool-workers` (0.13.0+) — you do not need to install it separately. `vitest` (>= 4) is a peer dependency that you must install yourself.
+</Aside>
 
 ## Project setup
 
 ### Vitest configuration
 
-Create a `vitest.config.ts` at the root of your project using `defineWorkersConfig` from `@cloudflare/vitest-pool-workers`:
+Create a `vitest.config.ts` at the root of your project using the `stratalTest()` plugin:
 
 ```typescript
-import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config'
+import { stratalTest } from '@stratal/testing/vitest-plugin'
+import { defineConfig } from 'vitest/config'
 
-export default defineWorkersConfig({
+export default defineConfig({
+  plugins: [stratalTest({ wrangler: { configPath: './wrangler.jsonc' } })],
   test: {
     setupFiles: ['./vitest.setup.ts'],
-    poolOptions: {
-      workers: {
-        wrangler: {
-          configPath: './wrangler.jsonc',
-        },
-      },
-    },
   },
 })
 ```
+
+<Aside type="tip">
+  `stratalTest()` wraps `cloudflareTest` from `@cloudflare/vitest-pool-workers` and applies Stratal-specific defaults: a tslib alias for tsyringe, ZenStack language mocks, a nodemailer mock, and SSR externals configuration. You do not need to configure these manually.
+</Aside>
 
 <Aside type="note">
   The `wrangler.configPath` tells the pool worker to read bindings (KV, R2, D1, Queues, etc.) from your Wrangler config. Tests get the same bindings your Worker uses in production.

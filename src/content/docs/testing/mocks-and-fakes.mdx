@@ -5,7 +5,7 @@ description: FakeStorageService, FetchMock, and test environment helpers.
 
 import { Aside } from '@astrojs/starlight/components';
 
-`@stratal/testing` provides several tools for isolating your code from external dependencies: deep mocks with `createMock`, an in-memory `FakeStorageService`, fetch interception with `FetchMock`, and a nodemailer mock for email testing.
+`@stratal/testing` provides several tools for isolating your code from external dependencies: deep mocks with `createMock`, an in-memory `FakeStorageService`, fetch interception with `MockFetch` (built on [MSW](https://mswjs.io/)), and a nodemailer mock for email testing.
 
 ## Deep mocks with createMock
 
@@ -153,36 +153,39 @@ describe('Document upload', () => {
 
 ## FetchMock
 
-`createFetchMock()` creates a wrapper around Cloudflare's built-in `fetchMock` (based on undici's `MockAgent`). Use it to intercept outgoing `fetch` calls in your tests without hitting real external APIs.
+`createMockFetch()` creates a fetch interceptor built on [MSW (Mock Service Worker)](https://mswjs.io/). Use it to intercept outgoing `fetch` calls in your tests without hitting real external APIs.
 
 ```typescript
-import { createFetchMock } from '@stratal/testing'
+import { createMockFetch } from '@stratal/testing'
 
-const mock = createFetchMock()
+const mock = createMockFetch()
 ```
 
 ### Setup and teardown
 
-Activate the mock in `beforeEach` and reset it in `afterEach`:
+Start intercepting in `beforeAll`, reset handlers between tests in `afterEach`, and stop intercepting in `afterAll`:
 
 ```typescript
-import { createFetchMock } from '@stratal/testing'
-import { afterEach, beforeEach } from 'vitest'
+import { createMockFetch } from '@stratal/testing'
+import { afterAll, afterEach, beforeAll } from 'vitest'
 
-const mock = createFetchMock()
+const mock = createMockFetch()
 
-beforeEach(() => {
-  mock.activate()
-  mock.disableNetConnect()
+beforeAll(() => {
+  mock.listen()
 })
 
 afterEach(() => {
   mock.reset()
 })
+
+afterAll(() => {
+  mock.close()
+})
 ```
 
 <Aside type="caution">
-  Calling `disableNetConnect()` ensures that any unmocked `fetch` call throws an error instead of hitting the network. This prevents accidental external requests in tests.
+  Always call `mock.close()` in `afterAll` to stop intercepting and clean up resources. Failing to do so can cause test hangs or interfere with other test suites.
 </Aside>
 
 ### Mocking JSON responses
@@ -200,7 +203,6 @@ it('should fetch user data from external API', async () => {
 
   response.assertOk()
   await response.assertJsonPath('data.name', 'Alice')
-  mock.assertNoPendingInterceptors()
 })
 ```
 
@@ -244,91 +246,48 @@ it('should handle external API failure', async () => {
 | `method` | `string` | `'GET'` | HTTP method to match |
 | `path` | `string` | — | Override the URL pathname |
 
-### Advanced: direct interceptor API
+### Adding runtime handlers with `use()`
 
-For more control, use the direct `get(origin).intercept().reply()` pattern from the underlying undici `MockPool`:
-
-```typescript
-mock
-  .get('https://api.example.com')
-  .intercept({ path: '/users', method: 'POST' })
-  .reply(201, JSON.stringify({ id: 1, created: true }))
-```
-
-This gives you access to advanced features like body matching:
+Use `mock.use()` to add MSW request handlers for a single test. These handlers are cleared on `mock.reset()`:
 
 ```typescript
-mock
-  .get('https://api.example.com')
-  .intercept({
-    path: '/users',
-    method: 'POST',
-    body: (body) => body.includes('alice'),
-  })
-  .reply(201, JSON.stringify({ id: 1 }))
-```
+import { createMockFetch, http, HttpResponse } from '@stratal/testing'
 
-### Asserting interceptors
+const mock = createMockFetch()
 
-Call `assertNoPendingInterceptors()` at the end of a test to verify that all defined mocks were actually called:
+it('should handle a custom response', async () => {
+  mock.use(
+    http.get('https://api.example.com/status', () => {
+      return HttpResponse.json({ status: 'degraded' }, { status: 503 })
+    })
+  )
 
-```typescript
-it('should call the payment API', async () => {
-  mock.mockJsonResponse('https://payments.example.com/charge', {
-    success: true,
-  }, { method: 'POST' })
+  const response = await module.http.get('/api/health').send()
 
-  await module.http
-    .post('/api/orders/123/pay')
-    .withBody({ amount: 9900 })
-    .send()
-
-  mock.assertNoPendingInterceptors()
+  response.assertServerError()
 })
 ```
 
-### FetchMock methods reference
+<Aside type="tip">
+  `http` and `HttpResponse` are re-exported from MSW by `@stratal/testing` for convenience. Use `mock.use()` with raw MSW handlers when you need full control over matching logic or response construction — for example, conditional responses based on request headers or body content.
+</Aside>
+
+### MockFetch methods reference
 
 | Method | Description |
 | --- | --- |
-| `activate()` | Activate fetch mocking |
-| `deactivate()` | Deactivate fetch mocking |
-| `disableNetConnect()` | Block all unmocked network calls |
-| `enableNetConnect(host?)` | Allow network calls to a specific host or pattern |
-| `reset()` | Reset all mocks and deactivate |
-| `get(origin)` | Get a `MockPool` for the given origin |
+| `listen()` | Start intercepting HTTP requests. Call in `beforeAll`. |
+| `reset()` | Reset runtime handlers. Call in `afterEach`. |
+| `close()` | Stop intercepting. Call in `afterAll`. |
+| `use(...handlers)` | Add runtime MSW request handlers for a single test |
 | `mockJsonResponse(url, data, options?)` | Mock a JSON response |
 | `mockError(url, status, message?, options?)` | Mock an error response |
-| `mockRequest(origin, options)` | Mock any HTTP request |
-| `assertNoPendingInterceptors()` | Assert all interceptors were called |
 
 ## Nodemailer mock
 
-If your application uses the SMTP email provider, the test environment needs a mock for `nodemailer` to avoid real SMTP connections. Add an alias in your `vitest.config.ts`:
+If your application uses the SMTP email provider, `stratalTest()` automatically aliases `nodemailer` to `@stratal/testing/mocks/nodemailer` — no extra configuration needed.
 
-```typescript
-import { defineWorkersConfig } from '@cloudflare/vitest-pool-workers/config'
-
-export default defineWorkersConfig({
-  test: {
-    setupFiles: ['./vitest.setup.ts'],
-    alias: {
-      nodemailer: '@stratal/testing/mocks/nodemailer',
-    },
-    poolOptions: {
-      workers: {
-        wrangler: {
-          configPath: './wrangler.jsonc',
-        },
-      },
-    },
-  },
-})
-```
-
-<Aside type="note">
-  The nodemailer mock replaces `createTransport` with a no-op that resolves `sendMail` calls immediately. No emails are sent and no SMTP connection is made. This alias is only needed if your module tree includes the SMTP email provider.
-</Aside>
+The mock replaces `createTransport` with a no-op that resolves `sendMail` calls immediately. No emails are sent and no SMTP connection is made.
 
 ## Environment helpers
 
@@ -351,21 +310,23 @@ it('should format config from env', () => {
 Here is a combined example using provider overrides, fetch mocking, and storage assertions in a single test suite:
 
 ```typescript
-import { Test, type TestingModule, createFetchMock } from '@stratal/testing'
+import { Test, type TestingModule, createMockFetch } from '@stratal/testing'
 import { createMock, type DeepMocked } from '@stratal/testing/mocks'
 import { EMAIL_TOKENS, type EmailService } from 'stratal/email'
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { InvoiceModule } from '../invoice.module'
 
 describe('InvoiceController', () => {
   let module: TestingModule
   let mockEmailService: DeepMocked<EmailService>
-  const fetchMock = createFetchMock()
+  const fetchMock = createMockFetch()
+
+  beforeAll(() => {
+    fetchMock.listen()
+  })
 
   beforeEach(async () => {
     mockEmailService = createMock<EmailService>()
-    fetchMock.activate()
-    fetchMock.disableNetConnect()
 
     module = await Test.createTestingModule({
       imports: [InvoiceModule],
@@ -382,6 +343,7 @@ describe('InvoiceController', () => {
   })
 
   afterAll(async () => {
+    fetchMock.close()
     await module.close()
   })
 
@@ -408,9 +370,6 @@ describe('InvoiceController', () => {
 
     // Verify email was sent
     expect(mockEmailService.send).toHaveBeenCalledOnce()
-
-    // Verify tax API was called
-    fetchMock.assertNoPendingInterceptors()
   })
 })
 ```
