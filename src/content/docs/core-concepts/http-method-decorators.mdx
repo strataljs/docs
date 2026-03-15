@@ -1,0 +1,220 @@
+---
+title: HTTP Method Decorators
+description: Using explicit @Get, @Post, @Put, @Patch, @Delete, and @All decorators for custom routing.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+HTTP method decorators are an alternative to [convention-based routing](/core-concepts/controllers-and-routing/) for when you need custom paths, complex RESTful routes that don't fit the convention pattern, non-CRUD actions, or multiple routes with the same HTTP verb on a single controller.
+
+```typescript
+import { Controller, Get, Post, Put, Patch, Delete, All, RouterContext } from 'stratal/router'
+```
+
+## Example controller
+
+```typescript
+import { Controller, Get, Post, Put, Patch, Delete, RouterContext } from 'stratal/router'
+import { z } from 'stratal/validation'
+
+@Controller('/api/users', { tags: ['Users'] })
+export class UsersController {
+  @Get('/', {
+    response: z.object({
+      data: z.array(z.object({ id: z.string(), name: z.string() })),
+    }),
+    summary: 'List all users',
+  })
+  listUsers(ctx: RouterContext) {
+    return ctx.json({ data: [] })
+  }
+
+  @Get('/:id', {
+    params: z.object({ id: z.string().uuid() }),
+    response: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+    summary: 'Get user by ID',
+  })
+  getUser(ctx: RouterContext) {
+    return ctx.json({ id: ctx.param('id'), name: 'Alice', email: 'alice@example.com' })
+  }
+
+  @Post('/', {
+    body: z.object({ name: z.string().min(1), email: z.string().email() }),
+    response: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+    summary: 'Create a user',
+    statusCode: 201,
+  })
+  async createUser(ctx: RouterContext) {
+    const body = await ctx.body<{ name: string; email: string }>()
+    return ctx.json({ id: '1', ...body }, 201)
+  }
+
+  @Put('/:id', {
+    params: z.object({ id: z.string().uuid() }),
+    body: z.object({ name: z.string(), email: z.string().email() }),
+    response: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+    summary: 'Replace a user',
+  })
+  async replaceUser(ctx: RouterContext) {
+    const body = await ctx.body<{ name: string; email: string }>()
+    return ctx.json({ id: ctx.param('id'), ...body })
+  }
+
+  @Patch('/:id', {
+    params: z.object({ id: z.string().uuid() }),
+    body: z.object({ name: z.string().optional(), email: z.string().email().optional() }),
+    response: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+    summary: 'Update a user',
+  })
+  async updateUser(ctx: RouterContext) {
+    const body = await ctx.body<Partial<{ name: string; email: string }>>()
+    return ctx.json({ id: ctx.param('id'), name: 'Alice', email: 'alice@example.com', ...body })
+  }
+
+  @Delete('/:id', {
+    params: z.object({ id: z.string().uuid() }),
+    response: z.object({ success: z.boolean() }),
+    summary: 'Delete a user',
+  })
+  deleteUser(ctx: RouterContext) {
+    return ctx.json({ success: true })
+  }
+}
+```
+
+Notice that method names are arbitrary — there is no `IController` interface to implement. The HTTP method and path are determined entirely by the decorator.
+
+## Decorator reference
+
+Each decorator takes a `path` and an optional `config` object:
+
+| Decorator  | Signature                         | HTTP verb |
+| ---------- | --------------------------------- | --------- |
+| `@Get`     | `@Get(path, config?)`             | GET       |
+| `@Post`    | `@Post(path, config?)`            | POST      |
+| `@Put`     | `@Put(path, config?)`             | PUT       |
+| `@Patch`   | `@Patch(path, config?)`           | PATCH     |
+| `@Delete`  | `@Delete(path, config?)`          | DELETE    |
+| `@All`     | `@All(path, config?)`             | All verbs |
+
+Key points:
+
+- **`path`** is relative to the controller's base path. `@Get('/:id')` on a controller at `/api/users` registers `GET /api/users/:id`.
+- **Method names are arbitrary.** Name your methods whatever makes sense — there is no `IController` interface to implement.
+- **`config`** accepts the same `RouteConfig` properties as `@Route` (body, params, query, response, tags, security, summary, description, hideFromDocs) plus `statusCode`.
+
+<Aside type="note">
+  The default success status code is **200** for all HTTP method decorators. Unlike convention-based routing where `create()` defaults to 201, you must set `statusCode: 201` explicitly when using `@Post` for resource creation.
+</Aside>
+
+## Complex RESTful paths
+
+HTTP method decorators shine when your routes don't map to the six convention-based methods. Here are common patterns:
+
+```typescript
+@Controller('/api/users', { tags: ['Users'] })
+export class UsersController {
+  // Sub-resource route: upload a user's avatar
+  @Post('/:id/avatar', {
+    params: z.object({ id: z.string().uuid() }),
+    response: z.object({ url: z.string().url() }),
+    summary: 'Upload user avatar',
+    statusCode: 201,
+  })
+  async uploadAvatar(ctx: RouterContext) {
+    // handle file upload
+    return ctx.json({ url: 'https://cdn.example.com/avatars/1.png' }, 201)
+  }
+
+  // Action route: non-CRUD operation
+  @Post('/:id/activate', {
+    params: z.object({ id: z.string().uuid() }),
+    response: z.object({ activated: z.boolean() }),
+    summary: 'Activate a user account',
+  })
+  activateUser(ctx: RouterContext) {
+    return ctx.json({ activated: true })
+  }
+
+  // Nested resource: deeply nested paths
+  @Get('/:userId/posts/:postId', {
+    params: z.object({ userId: z.string().uuid(), postId: z.string().uuid() }),
+    response: z.object({ id: z.string(), title: z.string(), body: z.string() }),
+    summary: 'Get a specific post by a user',
+  })
+  getUserPost(ctx: RouterContext) {
+    return ctx.json({
+      id: ctx.param('postId'),
+      title: 'Hello World',
+      body: 'Post content',
+    })
+  }
+}
+```
+
+## The `@All` decorator
+
+The `@All` decorator registers a handler for all HTTP methods on a given path. This is useful for catch-all routes like wildcard proxies or fallback handlers.
+
+```typescript
+import { Controller, All, RouterContext } from 'stratal/router'
+
+@Controller('/api/proxy')
+export class ProxyController {
+  @All('/:path{.+}', {
+    response: z.object({ proxied: z.boolean() }),
+    summary: 'Proxy all requests',
+  })
+  proxyAll(ctx: RouterContext) {
+    return ctx.json({ proxied: true })
+  }
+}
+```
+
+`@All` routes are **automatically excluded from the OpenAPI specification**. Since they match every HTTP method, including them would create ambiguous documentation. You do not need to set `hideFromDocs: true`.
+
+<Aside type="caution">
+  **Mutual exclusivity:** You cannot mix `@Route()` with HTTP method decorators (`@Get`, `@Post`, etc.) in the same controller. Doing so throws a `ControllerRegistrationError`. Different controllers in the same module can use different routing patterns.
+</Aside>
+
+## Guards
+
+Guards work the same way with HTTP method decorators. Apply `@UseGuards` at the controller or method level:
+
+```typescript
+import { Controller, Get, Delete, UseGuards, RouterContext } from 'stratal/router'
+import { AuthGuard } from './auth.guard'
+import { RolesGuard } from './roles.guard'
+
+@Controller('/api/orders', { tags: ['Orders'] })
+@UseGuards(AuthGuard)
+export class OrdersController {
+  @Get('/', {
+    response: orderListSchema,
+    summary: 'List orders',
+  })
+  listOrders(ctx: RouterContext) {
+    return ctx.json({ orders: [] })
+  }
+
+  @UseGuards(RolesGuard)
+  @Delete('/:id', {
+    params: z.object({ id: z.string() }),
+    response: z.object({ success: z.boolean() }),
+    summary: 'Delete an order',
+  })
+  deleteOrder(ctx: RouterContext) {
+    return ctx.json({ success: true })
+  }
+}
+```
+
+<Aside type="tip">
+  **When to use which?** Use convention-based routing for standard CRUD resources where the six method names (`index`, `show`, `create`, `update`, `patch`, `destroy`) cover your needs. Use HTTP method decorators for complex RESTful paths (sub-resources, actions, nested resources), non-CRUD endpoints, or controllers that need multiple routes with the same HTTP verb.
+</Aside>
+
+## Next steps
+
+- [Convention-based Routing](/core-concepts/controllers-and-routing/) for the `IController` approach with automatic method-to-verb mapping.
+- [OpenAPI overview](/openapi/overview/) to see how decorator schemas generate API documentation.
+- [Guards guide](/guides/guards/) for writing custom guards.

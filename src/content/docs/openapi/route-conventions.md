@@ -3,7 +3,7 @@ title: Route Conventions
 description: Method name to HTTP verb mapping and auto-derived status codes.
 ---
 
-Stratal uses convention-based routing. The name of a controller method determines the HTTP verb, URL path, and success status code for that route. This keeps your controllers declarative and removes the need for manual route registration.
+Stratal uses convention-based routing by default. The name of a controller method determines the HTTP verb, URL path, and success status code for that route. This keeps your controllers declarative and removes the need for manual route registration. For an alternative approach using explicit decorators, see [HTTP Method Decorators](/core-concepts/http-method-decorators/).
 
 ## Method-to-route mapping
 
@@ -124,6 +124,40 @@ Every conventional method needs a `@Route` decorator to be included in the OpenA
 | `tags` | `string[]` | No | Additional tags for this route. |
 | `security` | `SecurityScheme[]` | No | Security schemes for this route. |
 | `hideFromDocs` | `boolean` | No | Exclude this route from the spec. |
+| `statusCode` | `number` | No | Override the default success status code. |
+
+## HTTP method decorators
+
+When using [HTTP method decorators](/core-concepts/http-method-decorators/) (`@Get`, `@Post`, etc.), the HTTP method and path are explicit. OpenAPI metadata goes directly in the decorator config:
+
+```typescript
+import { Controller, Get, Post, RouterContext } from 'stratal/router'
+import { z } from 'stratal/validation'
+
+@Controller('/api/users', { tags: ['Users'] })
+export class UsersController {
+  @Get('/', {
+    response: z.object({ data: z.array(z.object({ id: z.string(), name: z.string() })) }),
+    summary: 'List all users',
+  })
+  listUsers(ctx: RouterContext) {
+    return ctx.json({ data: [] })
+  }
+
+  @Post('/', {
+    body: z.object({ name: z.string(), email: z.string().email() }),
+    response: z.object({ id: z.string(), name: z.string(), email: z.string() }),
+    summary: 'Create a user',
+    statusCode: 201,
+  })
+  async createUser(ctx: RouterContext) {
+    const body = await ctx.body<{ name: string; email: string }>()
+    return ctx.json({ id: '1', ...body }, 201)
+  }
+}
+```
+
+The `statusCode` property defaults to **200** for all HTTP method decorators. Set `statusCode: 201` explicitly for resource creation endpoints.
 
 ## Response shorthand
 

@@ -63,6 +63,7 @@ export default defineConfig({
               items: [
                   { label: 'Modules', slug: 'core-concepts/modules' },
                   { label: 'Controllers and Routing', slug: 'core-concepts/controllers-and-routing' },
+                  { label: 'HTTP Method Decorators', slug: 'core-concepts/http-method-decorators' },
                   { label: 'Dependency Injection', slug: 'core-concepts/dependency-injection' },
                   { label: 'Providers', slug: 'core-concepts/providers' },
                   { label: 'Events', slug: 'core-concepts/events' },

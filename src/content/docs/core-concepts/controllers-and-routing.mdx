@@ -1,11 +1,11 @@
 ---
-title: Controllers and Routing
-description: Using @Controller, @Route, RESTful conventions, and RouterContext.
+title: Convention-based Routing
+description: Using @Controller, @Route, IController conventions, and RouterContext for RESTful controllers.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Controllers are where you handle HTTP requests. Each controller is a class decorated with `@Controller` that defines one or more route handler methods. Stratal uses a convention-based approach where method names map directly to HTTP verbs and paths.
+Controllers are where you handle HTTP requests. Each controller is a class decorated with `@Controller` that defines one or more route handler methods. Stratal offers two routing approaches: **convention-based routing** (covered on this page), where method names map directly to HTTP verbs and paths, and [**HTTP method decorators**](/core-concepts/http-method-decorators/), where you use explicit `@Get`, `@Post`, etc. decorators for full control over paths and methods.
 
 ## Create a controller
 
@@ -125,6 +125,7 @@ The full `RouteConfig` interface:
 | `summary`       | `string`            | Short OpenAPI summary                          |
 | `description`   | `string`            | Detailed OpenAPI description                   |
 | `hideFromDocs`  | `boolean`           | Exclude this route from the OpenAPI spec       |
+| `statusCode`   | `number`            | Override the default success status code       |
 
 <Aside type="note">
   Zod schemas serve double duty: they validate incoming data at runtime and generate the OpenAPI specification. One source of truth for both.
@@ -237,6 +238,7 @@ For a complete guide on writing guards, see the [Guards guide](/guides/guards/).
 
 ## Next steps
 
+- [HTTP Method Decorators](/core-concepts/http-method-decorators/) for explicit `@Get`, `@Post`, etc. when you need custom paths or non-CRUD endpoints.
 - [Modules](/core-concepts/modules/) to learn how controllers are registered in modules.
 - [Dependency Injection](/core-concepts/dependency-injection/) to inject services into your controllers.
 - [Guards guide](/guides/guards/) for writing custom guards.

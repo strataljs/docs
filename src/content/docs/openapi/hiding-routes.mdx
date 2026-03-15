@@ -3,6 +3,8 @@ title: Hiding Routes
 description: Using hideFromDocs to exclude internal endpoints.
 ---
 
+import { Aside } from '@astrojs/starlight/components';
+
 Not every endpoint belongs in your public API documentation. Internal tools, debug endpoints, or work-in-progress features can be hidden from the generated spec while still functioning normally.
 
 ## Why hide routes
@@ -72,6 +74,40 @@ export class UsersController implements IController {
 ```
 
 Here `GET /api/users` appears in the docs, but `GET /api/users/:id` does not.
+
+The `hideFromDocs` property also works in [HTTP method decorator](/core-concepts/http-method-decorators/) config:
+
+```typescript
+@Get('/debug', {
+  response: z.object({ debug: z.unknown() }),
+  hideFromDocs: true,
+})
+debugInfo(ctx: RouterContext) {
+  return ctx.json({ debug: {} })
+}
+```
+
+## `@All` routes
+
+Routes registered with the `@All` decorator are automatically excluded from the OpenAPI specification. Since `@All` matches every HTTP method, including it would create ambiguous documentation.
+
+```typescript
+import { Controller, All, RouterContext } from 'stratal/router'
+
+@Controller('/api/proxy')
+export class ProxyController {
+  @All('/:path{.+}', {
+    response: z.object({ proxied: z.boolean() }),
+  })
+  proxyAll(ctx: RouterContext) {
+    return ctx.json({ proxied: true })
+  }
+}
+```
+
+<Aside type="note">
+  There is no need to set `hideFromDocs: true` on `@All` routes — they are excluded automatically.
+</Aside>
 
 ## Override behavior
 

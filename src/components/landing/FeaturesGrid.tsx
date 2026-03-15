@@ -10,9 +10,9 @@ const features = [
   },
   {
     icon: '🛤️',
-    title: 'Convention-based Routing',
+    title: 'Flexible Routing',
     description:
-      'Method names map to HTTP verbs automatically. Name it "create" and it becomes POST. No route tables to maintain.',
+      'Convention-based mapping from method names to HTTP verbs, or explicit @Get/@Post decorators for full control. Pick the style that fits.',
   },
   {
     icon: '💉',
