@@ -117,6 +117,7 @@ export default defineConfig({
                   { label: 'Overview', slug: 'framework/overview' },
                   { label: 'Database', slug: 'framework/database' },
                   { label: 'Database Events', slug: 'framework/database-events' },
+                  { label: 'Seeders', slug: 'framework/seeders' },
                   { label: 'Auth', slug: 'framework/auth' },
                   { label: 'RBAC', slug: 'framework/rbac' },
                   { label: 'Auth Guard', slug: 'framework/auth-guard' },

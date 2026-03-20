@@ -1,132 +1,166 @@
 ---
 title: Seeders
-description: Populate your database with test and development data using the @stratal/seeders CLI.
+description: Seed your test database with initial data using the @stratal/testing Seeder class.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Seeders populate your database with initial or test data. The `@stratal/seeders` package provides a `Seeder` base class and a CLI for running seeders against your Cloudflare Workers bindings.
+Seeders populate your test database with predictable data before each test run. The `@stratal/testing` package provides a `Seeder` base class that receives the database service as a parameter and runs inside a transaction via `TestingModule.seed()`.
 
-## Installation
-
-```bash
-yarn add -D @stratal/seeders
-```
+<Aside type="tip">
+  Looking for application-layer seeders that run via the CLI? See [Application Seeders](/framework/seeders/).
+</Aside>
 
 ## Creating a seeder
 
-Extend the `Seeder` base class and implement the `run()` method:
+Extend the `Seeder` base class and implement the `run(db)` method:
 
 ```typescript
-import { Seeder } from '@stratal/seeders'
-import { inject, DI_TOKENS } from 'stratal/di'
+import { Seeder } from '@stratal/testing'
 import type { DatabaseService } from '@stratal/framework/database'
-import { UserFactory } from './user.factory'
 
 export class UserSeeder extends Seeder {
-  constructor(
-    @inject(DI_TOKENS.Database) private readonly db: DatabaseService,
-  ) {
-    super()
-  }
-
-  async run(): Promise<void> {
-    await new UserFactory().count(10).createMany(this.db)
+  async run(db: DatabaseService): Promise<void> {
+    await db.user.create({
+      data: {
+        id: 'test-user-id',
+        email: 'user@test.com',
+        name: 'Test User',
+        emailVerified: true,
+        role: 'user',
+      },
+    })
   }
 }
 ```
 
-Register the seeder in a module's `providers` array:
+The `run()` method receives the `DatabaseService` instance directly — no constructor injection needed. This keeps test seeders simple and self-contained.
+
+## Running seeders
+
+Use `TestingModule.seed()` to run one or more seeders. Each call runs inside a database transaction, so all operations either succeed or roll back together.
 
 ```typescript
-@Module({
-  providers: [UserSeeder],
-})
-export class UsersModule {}
+import { TestingModule } from '@stratal/testing'
+import { UserSeeder } from './seeders/user.seeder'
+
+const module = await TestingModule.create(AppModule)
+
+// Run a single seeder
+await module.seed(new UserSeeder())
+
+// Run multiple seeders in a single transaction
+await module.seed(new UserSeeder(), new RoleSeeder())
 ```
 
-## Naming convention
+## Named connections
 
-Seeder names are derived from the class name by removing the `Seeder` suffix and converting to kebab-case:
-
-| Class name | CLI name |
-| --- | --- |
-| `UserSeeder` | `user` |
-| `RolePermissionsSeeder` | `role-permissions` |
-| `InitialDataSeeder` | `initial-data` |
-
-## CLI commands
-
-The `stratal-seed` CLI discovers seeders from your module tree and runs them.
-
-### Run a specific seeder
-
-```bash
-npx stratal-seed run user
-```
-
-### Run all seeders
-
-```bash
-npx stratal-seed run --all
-```
-
-### List available seeders
-
-```bash
-npx stratal-seed list
-```
-
-### Dry run
-
-Preview which seeders would run without executing them:
-
-```bash
-npx stratal-seed run --all --dry-run
-```
-
-## How it works
-
-The CLI uses Wrangler's `getPlatformProxy()` to obtain your Cloudflare bindings (D1, KV, R2, etc.) locally. It then bootstraps your module tree, discovers all classes that extend `Seeder`, and executes their `run()` methods inside a request scope.
-
-
-## Auto-discovery
-
-Seeders are automatically discovered from the module tree. Any class that extends `Seeder` and is listed in a module's `providers` array will be found by the CLI. Only bare class providers are scanned — value, factory, and existing providers are skipped.
-
-## Using with factories
-
-Seeders pair naturally with [factories](/testing/factories/) for generating realistic data:
+The `Seeder` class supports generic connection names for multi-database setups:
 
 ```typescript
-import { Seeder } from '@stratal/seeders'
-import { inject, DI_TOKENS } from 'stratal/di'
+import { Seeder } from '@stratal/testing'
 import type { DatabaseService } from '@stratal/framework/database'
-import { UserFactory } from './user.factory'
-import { PostFactory } from './post.factory'
 
-export class DemoDataSeeder extends Seeder {
-  constructor(
-    @inject(DI_TOKENS.Database) private readonly db: DatabaseService,
-  ) {
-    super()
+export class AnalyticsSeeder extends Seeder<'analytics'> {
+  async run(db: DatabaseService<'analytics'>): Promise<void> {
+    await db.event.create({
+      data: { type: 'page_view', path: '/' },
+    })
   }
+}
+```
 
-  async run(): Promise<void> {
-    const users = await new UserFactory().count(5).createManyAndReturn(this.db)
+Pass the connection name as the first argument to `seed()`:
 
-    for (const user of users) {
-      await new PostFactory()
-        .state(attrs => ({ ...attrs, authorId: user.id }))
-        .count(3)
-        .createMany(this.db)
-    }
+```typescript
+await module.seed('analytics', new AnalyticsSeeder())
+```
+
+## Typical test pattern
+
+A common pattern is to truncate the database and re-seed before each test:
+
+```typescript
+import { describe, beforeEach, afterAll, it } from 'vitest'
+import { TestingModule } from '@stratal/testing'
+import { UserSeeder, ADMIN_USER_ID } from './seeders/user.seeder'
+
+describe('UsersController', () => {
+  let module: TestingModule
+
+  beforeEach(async () => {
+    module = await TestingModule.create(AppModule)
+    await module.truncateDb()
+    await module.seed(new UserSeeder())
+  })
+
+  afterAll(async () => {
+    await module.close()
+  })
+
+  it('returns the seeded user', async () => {
+    await module.assertDatabaseHas('user', { id: ADMIN_USER_ID })
+  })
+})
+```
+
+## Full example
+
+A more complete seeder that creates multiple related records:
+
+```typescript
+import { Seeder } from '@stratal/testing'
+import type { DatabaseService } from '@stratal/framework/database'
+
+export const ADMIN_USER_ID = 'admin-user-id'
+export const REGULAR_USER_ID = 'regular-user-id'
+
+export class UserSeeder extends Seeder {
+  async run(db: DatabaseService): Promise<void> {
+    const [admin, regular] = await Promise.all([
+      db.user.create({
+        data: {
+          id: ADMIN_USER_ID,
+          email: 'admin@test.com',
+          name: 'Admin User',
+          emailVerified: true,
+          role: 'admin',
+        },
+      }),
+      db.user.create({
+        data: {
+          id: REGULAR_USER_ID,
+          email: 'user@test.com',
+          name: 'Regular User',
+          emailVerified: true,
+          role: 'user',
+        },
+      }),
+    ])
+
+    await db.account.createMany({
+      data: [
+        {
+          accountId: admin.id,
+          providerId: 'credential',
+          userId: admin.id,
+          password: 'hashed-password',
+        },
+        {
+          accountId: regular.id,
+          providerId: 'credential',
+          userId: regular.id,
+          password: 'hashed-password',
+        },
+      ],
+    })
   }
 }
 ```
 
 ## Next steps
 
+- [Application Seeders](/framework/seeders/) for seeding your database via the CLI outside of tests.
 - [Factories](/testing/factories/) for generating test data with Faker.js.
-- [Database](/framework/database/) for configuring the database connection.
+- [Testing Module](/testing/testing-module/) for the full `TestingModule` API.
 - [Testing Overview](/testing/overview/) for setting up your test environment.

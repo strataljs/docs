@@ -220,7 +220,7 @@ All three methods accept an optional `onError` callback that is invoked if the s
 ```typescript
 return ctx.stream(
   () => {
-    throw new Error('stream error')
+    throw new StreamError()
   },
   async (err, stream) => {
     await stream.writeln(err.message)

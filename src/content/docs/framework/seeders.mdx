@@ -1,0 +1,168 @@
+---
+title: Seeders
+description: Populate your database with initial or development data using the @stratal/seeders CLI.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The `@stratal/seeders` package provides an application-layer CLI for seeding your database outside of tests. Unlike [testing seeders](/testing/seeders/) which receive the database as a parameter, application seeders use dependency injection — giving them access to your services, repositories, and any other provider in your module tree.
+
+<Aside type="tip">
+  For seeders used inside tests with `TestingModule`, see [Testing Seeders](/testing/seeders/).
+</Aside>
+
+## Installation
+
+```bash
+yarn add -D @stratal/seeders
+```
+
+## Creating a seeder
+
+Extend the `Seeder` base class and implement the `run()` method. Use constructor injection to access your services:
+
+```typescript
+import { Seeder } from '@stratal/seeders'
+import { inject, Transient } from 'stratal/di'
+import { NotesService } from '../notes/notes.service'
+
+@Transient()
+export class NotesSeeder extends Seeder {
+  constructor(@inject(NotesService) private readonly notesService: NotesService) {
+    super()
+  }
+
+  async run(): Promise<void> {
+    const notes = [
+      { title: 'Welcome', content: 'This note was created by a seeder' },
+      { title: 'Getting Started', content: 'Seeders populate your app with initial data' },
+    ]
+
+    for (const note of notes) {
+      this.notesService.create(note)
+    }
+  }
+}
+```
+
+<Aside>
+  Mark seeders with `@Transient()` so a fresh instance is created each time the seeder runs.
+</Aside>
+
+## Registering seeders
+
+Add the seeder to a module's `providers` array:
+
+```typescript
+import { Module } from 'stratal'
+import { NotesSeeder } from './seeders/notes.seeder'
+
+@Module({
+  providers: [NotesSeeder],
+})
+export class NotesModule {}
+```
+
+## Entry file
+
+Create an entry file that calls `SeederRunner.run()` with your root module:
+
+```typescript
+// src/seeders/index.ts
+import { SeederRunner } from '@stratal/seeders'
+import { AppModule } from '../app.module'
+
+SeederRunner.run(AppModule)
+```
+
+This file is the entry point you pass to the `stratal-seed` CLI.
+
+## CLI usage
+
+The `stratal-seed` CLI discovers seeders from your module tree and runs them.
+
+```bash
+stratal-seed <entry-file> <command> [options]
+```
+
+### Run a specific seeder
+
+```bash
+npx stratal-seed ./src/seeders/index.ts run notes
+```
+
+### Run all seeders
+
+```bash
+npx stratal-seed ./src/seeders/index.ts run --all
+```
+
+### List available seeders
+
+```bash
+npx stratal-seed ./src/seeders/index.ts list
+```
+
+### Dry run
+
+Preview which seeders would run without executing them:
+
+```bash
+npx stratal-seed ./src/seeders/index.ts run --all --dry-run
+```
+
+## Naming convention
+
+Seeder names are derived from the class name by removing the `Seeder` suffix and converting to kebab-case:
+
+| Class name | CLI name |
+| --- | --- |
+| `NotesSeeder` | `notes` |
+| `RolePermissionsSeeder` | `role-permissions` |
+| `InitialDataSeeder` | `initial-data` |
+
+## Auto-discovery
+
+Seeders are automatically discovered from the module tree. Any class that extends `Seeder` and is listed in a module's `providers` array will be found by the CLI. Only bare class providers are scanned — value, factory, and existing providers are skipped.
+
+## How it works
+
+The CLI uses Wrangler's `getPlatformProxy()` to obtain your Cloudflare bindings (D1, KV, R2, etc.) locally. It then bootstraps your module tree, discovers all classes that extend `Seeder`, and executes their `run()` methods inside a request scope.
+
+## Using with factories
+
+Seeders pair naturally with [factories](/testing/factories/) for generating realistic data:
+
+```typescript
+import { Seeder } from '@stratal/seeders'
+import { inject, DI_TOKENS, Transient } from 'stratal/di'
+import type { DatabaseService } from '@stratal/framework/database'
+import { UserFactory } from './user.factory'
+import { PostFactory } from './post.factory'
+
+@Transient()
+export class DemoDataSeeder extends Seeder {
+  constructor(
+    @inject(DI_TOKENS.Database) private readonly db: DatabaseService,
+  ) {
+    super()
+  }
+
+  async run(): Promise<void> {
+    const users = await new UserFactory().count(5).createManyAndReturn(this.db)
+
+    for (const user of users) {
+      await new PostFactory()
+        .state(attrs => ({ ...attrs, authorId: user.id }))
+        .count(3)
+        .createMany(this.db)
+    }
+  }
+}
+```
+
+## Next steps
+
+- [Testing Seeders](/testing/seeders/) for seeders used inside tests with `TestingModule`.
+- [Factories](/testing/factories/) for generating test data with Faker.js.
+- [Database](/framework/database/) for configuring the database connection.
