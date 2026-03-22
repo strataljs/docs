@@ -70,6 +70,7 @@ export default defineConfig({
                   { label: 'Events', slug: 'core-concepts/events' },
                   { label: 'Lifecycle Hooks', slug: 'core-concepts/lifecycle-hooks' },
                   { label: 'Configuration', slug: 'core-concepts/configuration' },
+                  { label: 'Quarry CLI', slug: 'core-concepts/quarry-cli' },
               ],
           },
           {
@@ -107,7 +108,6 @@ export default defineConfig({
                   { label: 'WebSocket Testing', slug: 'testing/websocket-testing' },
                   { label: 'SSE Testing', slug: 'testing/sse-testing' },
                   { label: 'Mocks and Fakes', slug: 'testing/mocks-and-fakes' },
-                  { label: 'Factories', slug: 'testing/factories' },
                   { label: 'Seeders', slug: 'testing/seeders' },
               ],
           },
@@ -118,6 +118,7 @@ export default defineConfig({
                   { label: 'Database', slug: 'framework/database' },
                   { label: 'Database Events', slug: 'framework/database-events' },
                   { label: 'Seeders', slug: 'framework/seeders' },
+                  { label: 'Factories', slug: 'framework/factories' },
                   { label: 'Auth', slug: 'framework/auth' },
                   { label: 'RBAC', slug: 'framework/rbac' },
                   { label: 'Auth Guard', slug: 'framework/auth-guard' },

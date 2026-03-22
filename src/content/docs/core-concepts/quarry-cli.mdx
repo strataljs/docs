@@ -1,0 +1,287 @@
+---
+title: Quarry CLI
+description: Build and run custom CLI commands for your Stratal application using Quarry, a Laravel Artisan-inspired command framework.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Quarry is Stratal's built-in CLI framework, inspired by [Laravel Artisan](https://laravel.com/docs/artisan). It lets you define custom commands that run against your full application — with access to dependency injection, services, and Cloudflare bindings. Commands extend the `Command` base class from `stratal/quarry`.
+
+## Running commands
+
+```bash
+npx quarry <command> [arguments] [options]
+```
+
+By default, Quarry uses `./src/index.ts` as the application entry point. To use a different entry file, pass it as the first argument:
+
+```bash
+npx quarry ./src/other-entry.ts <command> [arguments] [options]
+```
+
+## Creating a command
+
+Extend `Command`, define a static `command` signature and `description`, then implement `handle()`:
+
+```typescript
+import { Command } from 'stratal/quarry'
+import { inject } from 'tsyringe'
+import { TaskService } from '../services/task.service'
+
+export class AddTaskCommand extends Command {
+  static command = 'task:add {title : The task title} {--p|priority= : Task priority (low, normal, high)}'
+  static description = 'Add a new task'
+
+  constructor(
+    @inject(TaskService) private readonly tasks: TaskService,
+  ) {
+    super()
+  }
+
+  async handle(): Promise<number | undefined> {
+    const title = this.string('title')
+    const priority = this.string('priority') || 'normal'
+
+    const task = await this.tasks.add(title, priority)
+
+    this.success(`Task #${task.id} created: "${task.title}" [${task.priority}]`)
+  }
+}
+```
+
+The `handle()` method contains your command's logic. Return a number to set the exit code, or `undefined` (or nothing) for exit code `0`.
+
+## Command signatures
+
+Command signatures use a Laravel-style syntax to define the command name, arguments, and options in a single string.
+
+### Command naming
+
+| Style | Signature | Invocation |
+| --- | --- | --- |
+| Flat | `'greet'` | `npx quarry greet` |
+| Namespaced | `'task:add'` | `npx quarry task:add` |
+| Subcommand | `'task add'` | `npx quarry task add` |
+
+### Arguments
+
+| Syntax | Description |
+| --- | --- |
+| `{name}` | Required argument |
+| `{name?}` | Optional argument |
+| `{name=default}` | Argument with default value |
+| `{name*}` | Array/variadic argument |
+| `{name : description}` | Argument with description |
+
+### Options
+
+| Syntax | Description |
+| --- | --- |
+| `{--flag}` | Boolean flag |
+| `{--name=}` | Option that accepts a value |
+| `{--name=default}` | Option with default value |
+| `{--name=*}` | Array option (multiple values) |
+| `{--A\|name}` | Option with single-char alias |
+| `{--name= : description}` | Option with description |
+
+## Input accessors
+
+Use these methods inside `handle()` to retrieve parsed input values:
+
+| Method | Return type | Description |
+| --- | --- | --- |
+| `this.string(name)` | `string` | Get a string input (empty string if missing) |
+| `this.boolean(name)` | `boolean` | Get a boolean input (`false` if missing) |
+| `this.number(name)` | `number` | Get a numeric input (coerces strings, `0` if missing) |
+| `this.array(name)` | `string[]` | Get an array input (empty array if missing) |
+| `this.input<T>(name)` | `T` | Get an input with a generic type |
+
+## Output helpers
+
+Use these methods inside `handle()` to write output:
+
+| Method | Description |
+| --- | --- |
+| `this.info(message)` | Write an informational message |
+| `this.success(message)` | Write a success message |
+| `this.warn(message)` | Write a warning message (prefixed with `Warning:`) |
+| `this.error(message)` | Write an error message to the error stream |
+| `this.line(message?)` | Write a plain line (or empty line if no argument) |
+| `this.table(headers, rows)` | Write a formatted table |
+| `this.fail(message, exitCode?)` | Write an error and set exit code (default `1`) |
+
+### Table example
+
+```typescript
+import { Command } from 'stratal/quarry'
+import { inject } from 'tsyringe'
+import { TaskService } from '../services/task.service'
+
+export class ListTasksCommand extends Command {
+  static command = 'task:list {--s|status= : Filter by status (pending, done)}'
+  static description = 'List all tasks'
+
+  constructor(
+    @inject(TaskService) private readonly tasks: TaskService,
+  ) {
+    super()
+  }
+
+  async handle(): Promise<number | undefined> {
+    const status = this.string('status')
+    let tasks = await this.tasks.list()
+
+    if (status) {
+      tasks = tasks.filter((t) => t.status === status)
+    }
+
+    if (tasks.length === 0) {
+      this.info('No tasks found.')
+      return
+    }
+
+    this.table(
+      ['ID', 'Title', 'Priority', 'Status', 'Tags'],
+      tasks.map((t) => [
+        String(t.id),
+        t.title,
+        t.priority,
+        t.status,
+        t.tags.join(', ') || '-',
+      ]),
+    )
+  }
+}
+```
+
+## Registering commands
+
+Add command classes to a module's `providers` array. Quarry automatically discovers all `Command` subclasses in the module tree:
+
+```typescript
+import { Module } from 'stratal/module'
+import { AddTaskCommand } from './commands/add-task.command'
+import { ListTasksCommand } from './commands/list-tasks.command'
+import { TaskService } from './services/task.service'
+
+@Module({
+  providers: [
+    TaskService,
+    AddTaskCommand,
+    ListTasksCommand,
+  ],
+})
+export class AppModule {}
+```
+
+## Command chaining
+
+Call another command from within a command using `this.call()`:
+
+```typescript
+async handle(): Promise<number | undefined> {
+  // Call another command with arguments and options
+  const result = await this.call('task:list', { status: 'pending' })
+
+  if (result.exitCode !== 0) {
+    this.error('Failed to list tasks')
+  }
+}
+```
+
+## Aliases
+
+Define alternative names for a command using the static `aliases` property:
+
+```typescript
+export class ListTasksCommand extends Command {
+  static command = 'task:list'
+  static description = 'List all tasks'
+  static aliases = ['tasks', 'task:ls']
+
+  async handle(): Promise<number | undefined> {
+    // ...
+  }
+}
+```
+
+## Built-in commands
+
+Stratal ships with built-in Quarry commands:
+
+| Command | Description |
+| --- | --- |
+| `db:seed` | Run database seeders |
+| `db:seed:list` | List available database seeders |
+
+<Aside type="tip">
+  See [Seeders](/framework/seeders/) for full documentation on creating and running database seeders.
+</Aside>
+
+## How it works
+
+When you run `npx quarry`, the CLI:
+
+1. Uses Wrangler's `getPlatformProxy()` to obtain your Cloudflare bindings (D1, KV, R2, etc.) locally
+2. Imports your application entry file to bootstrap the full module tree
+3. Discovers all `Command` subclasses registered as providers
+4. Parses command signatures and delegates to the matched command's `handle()` method
+
+This means your commands have full access to dependency injection, services, and Cloudflare bindings — just like your HTTP handlers.
+
+## Testing commands
+
+Use `TestingModule.quarry()` to test commands with a fluent API:
+
+```typescript
+import { describe, it } from 'vitest'
+import { TestingModule } from '@stratal/testing'
+import { AppModule } from '../src/app.module'
+
+describe('AddTaskCommand', () => {
+  it('creates a task', async () => {
+    const module = await TestingModule.create(AppModule)
+
+    const result = await module
+      .quarry('task:add')
+      .withInput({ title: 'Buy milk', priority: 'high' })
+      .run()
+
+    result.assertSuccessful()
+    result.assertOutputContains('Task #')
+  })
+
+  it('fails without a title', async () => {
+    const module = await TestingModule.create(AppModule)
+
+    const result = await module
+      .quarry('task:add')
+      .withInput({})
+      .run()
+
+    result.assertFailed()
+  })
+})
+```
+
+### Assertion methods
+
+The `TestCommandResult` object returned by `.run()` provides these assertion methods:
+
+| Method | Description |
+| --- | --- |
+| `assertSuccessful()` | Assert exit code is `0` and no errors |
+| `assertFailed(exitCode?)` | Assert non-zero exit code (optionally a specific code) |
+| `assertExitCode(code)` | Assert a specific exit code |
+| `assertOutputContains(text)` | Assert output contains the given text |
+| `assertOutputMissing(text)` | Assert output does not contain the given text |
+| `assertErrorContains(text)` | Assert error output contains the given text |
+| `assertErrorMissing(text)` | Assert error output does not contain the given text |
+
+You can also access `result.exitCode`, `result.output`, and `result.errors` directly for custom assertions.
+
+## Next steps
+
+- [Seeders](/framework/seeders/) for populating your database via CLI commands.
+- [Dependency Injection](/core-concepts/dependency-injection/) for understanding how providers work.
+- [Testing Module](/testing/testing-module/) for the full `TestingModule` API.

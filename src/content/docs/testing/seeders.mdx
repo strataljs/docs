@@ -1,27 +1,35 @@
 ---
 title: Seeders
-description: Seed your test database with initial data using the @stratal/testing Seeder class.
+description: Seed your test database with initial data using the Seeder class from stratal/seeder.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Seeders populate your test database with predictable data before each test run. The `@stratal/testing` package provides a `Seeder` base class that receives the database service as a parameter and runs inside a transaction via `TestingModule.seed()`.
+Seeders populate your test database with predictable data before each test run. The `Seeder` base class from `stratal/seeder` runs inside the request-scoped container via `TestingModule.seed()`, giving each seeder access to dependency injection.
 
 <Aside type="tip">
-  Looking for application-layer seeders that run via the CLI? See [Application Seeders](/framework/seeders/).
+  Looking for application-layer seeders that run via the [Quarry CLI](/core-concepts/quarry-cli/)? See [Application Seeders](/framework/seeders/).
 </Aside>
 
 ## Creating a seeder
 
-Extend the `Seeder` base class and implement the `run(db)` method:
+Extend the `Seeder` base class and implement the `run()` method. Use constructor injection to access your services:
 
 ```typescript
-import { Seeder } from '@stratal/testing'
+import { Seeder } from 'stratal/seeder'
+import { inject, Transient } from 'stratal/di'
 import type { DatabaseService } from '@stratal/framework/database'
 
+@Transient()
 export class UserSeeder extends Seeder {
-  async run(db: DatabaseService): Promise<void> {
-    await db.user.create({
+  constructor(
+    @inject('Database') private readonly db: DatabaseService,
+  ) {
+    super()
+  }
+
+  async run(): Promise<void> {
+    await this.db.user.create({
       data: {
         id: 'test-user-id',
         email: 'user@test.com',
@@ -34,46 +42,47 @@ export class UserSeeder extends Seeder {
 }
 ```
 
-The `run()` method receives the `DatabaseService` instance directly — no constructor injection needed. This keeps test seeders simple and self-contained.
+<Aside>
+  Mark seeders with `@Transient()` so a fresh instance is created each time the seeder runs.
+</Aside>
 
 ## Running seeders
 
-Use `TestingModule.seed()` to run one or more seeders. Each call runs inside a database transaction, so all operations either succeed or roll back together.
+Use `TestingModule.seed()` to run one or more seeders. Pass seeder class constructors (not instances):
 
 ```typescript
 import { TestingModule } from '@stratal/testing'
 import { UserSeeder } from './seeders/user.seeder'
+import { RoleSeeder } from './seeders/role.seeder'
 
 const module = await TestingModule.create(AppModule)
 
 // Run a single seeder
-await module.seed(new UserSeeder())
+await module.seed(UserSeeder)
 
-// Run multiple seeders in a single transaction
-await module.seed(new UserSeeder(), new RoleSeeder())
+// Run multiple seeders
+await module.seed(UserSeeder, RoleSeeder)
 ```
 
-## Named connections
+Each seeder is resolved from the request-scoped container, so it has access to all registered providers via dependency injection.
 
-The `Seeder` class supports generic connection names for multi-database setups:
+## Calling other seeders
+
+Use `this.call()` inside a seeder to invoke another seeder:
 
 ```typescript
-import { Seeder } from '@stratal/testing'
-import type { DatabaseService } from '@stratal/framework/database'
+import { Seeder } from 'stratal/seeder'
+import { Transient } from 'stratal/di'
+import { UserSeeder } from './user.seeder'
+import { RoleSeeder } from './role.seeder'
 
-export class AnalyticsSeeder extends Seeder<'analytics'> {
-  async run(db: DatabaseService<'analytics'>): Promise<void> {
-    await db.event.create({
-      data: { type: 'page_view', path: '/' },
-    })
+@Transient()
+export class DatabaseSeeder extends Seeder {
+  async run(): Promise<void> {
+    await this.call(UserSeeder)
+    await this.call(RoleSeeder)
   }
 }
-```
-
-Pass the connection name as the first argument to `seed()`:
-
-```typescript
-await module.seed('analytics', new AnalyticsSeeder())
 ```
 
 ## Typical test pattern
@@ -83,7 +92,7 @@ A common pattern is to truncate the database and re-seed before each test:
 ```typescript
 import { describe, beforeEach, afterAll, it } from 'vitest'
 import { TestingModule } from '@stratal/testing'
-import { UserSeeder, ADMIN_USER_ID } from './seeders/user.seeder'
+import { UserSeeder } from './seeders/user.seeder'
 
 describe('UsersController', () => {
   let module: TestingModule
@@ -91,7 +100,7 @@ describe('UsersController', () => {
   beforeEach(async () => {
     module = await TestingModule.create(AppModule)
     await module.truncateDb()
-    await module.seed(new UserSeeder())
+    await module.seed(UserSeeder)
   })
 
   afterAll(async () => {
@@ -99,7 +108,7 @@ describe('UsersController', () => {
   })
 
   it('returns the seeded user', async () => {
-    await module.assertDatabaseHas('user', { id: ADMIN_USER_ID })
+    await module.assertDatabaseHas('user', { id: 'test-user-id' })
   })
 })
 ```
@@ -109,16 +118,24 @@ describe('UsersController', () => {
 A more complete seeder that creates multiple related records:
 
 ```typescript
-import { Seeder } from '@stratal/testing'
+import { Seeder } from 'stratal/seeder'
+import { inject, DI_TOKENS, Transient } from 'stratal/di'
 import type { DatabaseService } from '@stratal/framework/database'
 
 export const ADMIN_USER_ID = 'admin-user-id'
 export const REGULAR_USER_ID = 'regular-user-id'
 
+@Transient()
 export class UserSeeder extends Seeder {
-  async run(db: DatabaseService): Promise<void> {
+  constructor(
+    @inject(DI_TOKENS.Database) private readonly db: DatabaseService,
+  ) {
+    super()
+  }
+
+  async run(): Promise<void> {
     const [admin, regular] = await Promise.all([
-      db.user.create({
+      this.db.user.create({
         data: {
           id: ADMIN_USER_ID,
           email: 'admin@test.com',
@@ -127,7 +144,7 @@ export class UserSeeder extends Seeder {
           role: 'admin',
         },
       }),
-      db.user.create({
+      this.db.user.create({
         data: {
           id: REGULAR_USER_ID,
           email: 'user@test.com',
@@ -138,7 +155,7 @@ export class UserSeeder extends Seeder {
       }),
     ])
 
-    await db.account.createMany({
+    await this.db.account.createMany({
       data: [
         {
           accountId: admin.id,
@@ -160,7 +177,7 @@ export class UserSeeder extends Seeder {
 
 ## Next steps
 
-- [Application Seeders](/framework/seeders/) for seeding your database via the CLI outside of tests.
-- [Factories](/testing/factories/) for generating test data with Faker.js.
+- [Application Seeders](/framework/seeders/) for seeding your database via the Quarry CLI outside of tests.
+- [Factories](/framework/factories/) for generating test data with Faker.js.
 - [Testing Module](/testing/testing-module/) for the full `TestingModule` API.
 - [Testing Overview](/testing/overview/) for setting up your test environment.

@@ -1,28 +1,24 @@
 ---
 title: Seeders
-description: Populate your database with initial or development data using the @stratal/seeders CLI.
+description: Populate your database with initial or development data using Quarry CLI commands.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-The `@stratal/seeders` package provides an application-layer CLI for seeding your database outside of tests. Unlike [testing seeders](/testing/seeders/) which receive the database as a parameter, application seeders use dependency injection — giving them access to your services, repositories, and any other provider in your module tree.
+Seeders provide an application-layer CLI for populating your database outside of tests. They use dependency injection, giving them access to your services, repositories, and any other provider in your module tree.
+
+Seeders are part of the core `stratal` package and run as built-in [Quarry CLI](/core-concepts/quarry-cli/) commands.
 
 <Aside type="tip">
   For seeders used inside tests with `TestingModule`, see [Testing Seeders](/testing/seeders/).
 </Aside>
 
-## Installation
-
-```bash
-yarn add -D @stratal/seeders
-```
-
 ## Creating a seeder
 
-Extend the `Seeder` base class and implement the `run()` method. Use constructor injection to access your services:
+Extend the `Seeder` base class from `stratal/seeder` and implement the `run()` method. Use constructor injection to access your services:
 
 ```typescript
-import { Seeder } from '@stratal/seeders'
+import { Seeder } from 'stratal/seeder'
 import { inject, Transient } from 'stratal/di'
 import { NotesService } from '../notes/notes.service'
 
@@ -36,6 +32,7 @@ export class NotesSeeder extends Seeder {
     const notes = [
       { title: 'Welcome', content: 'This note was created by a seeder' },
       { title: 'Getting Started', content: 'Seeders populate your app with initial data' },
+      { title: 'Stratal', content: 'A modular Cloudflare Workers framework' },
     ]
 
     for (const note of notes) {
@@ -54,7 +51,7 @@ export class NotesSeeder extends Seeder {
 Add the seeder to a module's `providers` array:
 
 ```typescript
-import { Module } from 'stratal'
+import { Module } from 'stratal/module'
 import { NotesSeeder } from './seeders/notes.seeder'
 
 @Module({
@@ -63,44 +60,32 @@ import { NotesSeeder } from './seeders/notes.seeder'
 export class NotesModule {}
 ```
 
-## Entry file
-
-Create an entry file that calls `SeederRunner.run()` with your root module:
-
-```typescript
-// src/seeders/index.ts
-import { SeederRunner } from '@stratal/seeders'
-import { AppModule } from '../app.module'
-
-SeederRunner.run(AppModule)
-```
-
-This file is the entry point you pass to the `stratal-seed` CLI.
-
 ## CLI usage
 
-The `stratal-seed` CLI discovers seeders from your module tree and runs them.
+Seeders run via the [Quarry CLI](/core-concepts/quarry-cli/) using the built-in `db:seed` and `db:seed:list` commands.
 
-```bash
-stratal-seed <entry-file> <command> [options]
-```
+<Aside>
+  Quarry is Stratal's CLI framework. See the [Quarry CLI](/core-concepts/quarry-cli/) page for the full command reference.
+</Aside>
 
 ### Run a specific seeder
 
+Pass the seeder class name to `db:seed`:
+
 ```bash
-npx stratal-seed ./src/seeders/index.ts run notes
+npx quarry db:seed NotesSeeder
 ```
 
 ### Run all seeders
 
 ```bash
-npx stratal-seed ./src/seeders/index.ts run --all
+npx quarry db:seed --all
 ```
 
 ### List available seeders
 
 ```bash
-npx stratal-seed ./src/seeders/index.ts list
+npx quarry db:seed:list
 ```
 
 ### Dry run
@@ -108,18 +93,37 @@ npx stratal-seed ./src/seeders/index.ts list
 Preview which seeders would run without executing them:
 
 ```bash
-npx stratal-seed ./src/seeders/index.ts run --all --dry-run
+npx quarry db:seed --all --dry-run
 ```
 
 ## Naming convention
 
-Seeder names are derived from the class name by removing the `Seeder` suffix and converting to kebab-case:
+Seeders are identified by their class name when using the `db:seed` command:
 
-| Class name | CLI name |
+| Class name | CLI usage |
 | --- | --- |
-| `NotesSeeder` | `notes` |
-| `RolePermissionsSeeder` | `role-permissions` |
-| `InitialDataSeeder` | `initial-data` |
+| `NotesSeeder` | `npx quarry db:seed NotesSeeder` |
+| `RolePermissionsSeeder` | `npx quarry db:seed RolePermissionsSeeder` |
+| `InitialDataSeeder` | `npx quarry db:seed InitialDataSeeder` |
+
+## Calling other seeders
+
+Use `this.call()` to invoke another seeder from within a seeder:
+
+```typescript
+import { Seeder } from 'stratal/seeder'
+import { Transient } from 'stratal/di'
+import { UserSeeder } from './user.seeder'
+import { PostSeeder } from './post.seeder'
+
+@Transient()
+export class DatabaseSeeder extends Seeder {
+  async run(): Promise<void> {
+    await this.call(UserSeeder)
+    await this.call(PostSeeder)
+  }
+}
+```
 
 ## Auto-discovery
 
@@ -127,14 +131,14 @@ Seeders are automatically discovered from the module tree. Any class that extend
 
 ## How it works
 
-The CLI uses Wrangler's `getPlatformProxy()` to obtain your Cloudflare bindings (D1, KV, R2, etc.) locally. It then bootstraps your module tree, discovers all classes that extend `Seeder`, and executes their `run()` methods inside a request scope.
+The Quarry CLI uses Wrangler's `getPlatformProxy()` to obtain your Cloudflare bindings (D1, KV, R2, etc.) locally. It then bootstraps your module tree, discovers all classes that extend `Seeder`, and executes their `run()` methods inside a request scope.
 
 ## Using with factories
 
-Seeders pair naturally with [factories](/testing/factories/) for generating realistic data:
+Seeders pair naturally with [factories](/framework/factories/) for generating realistic data:
 
 ```typescript
-import { Seeder } from '@stratal/seeders'
+import { Seeder } from 'stratal/seeder'
 import { inject, DI_TOKENS, Transient } from 'stratal/di'
 import type { DatabaseService } from '@stratal/framework/database'
 import { UserFactory } from './user.factory'
@@ -163,6 +167,7 @@ export class DemoDataSeeder extends Seeder {
 
 ## Next steps
 
+- [Quarry CLI](/core-concepts/quarry-cli/) for the full command framework reference.
 - [Testing Seeders](/testing/seeders/) for seeders used inside tests with `TestingModule`.
-- [Factories](/testing/factories/) for generating test data with Faker.js.
+- [Factories](/framework/factories/) for generating test data with Faker.js.
 - [Database](/framework/database/) for configuring the database connection.
