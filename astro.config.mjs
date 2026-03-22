@@ -97,6 +97,7 @@ export default defineConfig({
                   { label: 'Service Bindings', slug: 'integrations/service-bindings' },
                   { label: 'Workflows', slug: 'integrations/workflows' },
                   { label: 'WebSocket', slug: 'integrations/websocket' },
+                  { label: 'AI Integration', slug: 'integrations/ai' },
               ],
           },
           {

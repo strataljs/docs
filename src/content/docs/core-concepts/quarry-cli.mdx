@@ -207,15 +207,47 @@ export class ListTasksCommand extends Command {
 
 ## Built-in commands
 
-Stratal ships with built-in Quarry commands:
+Stratal ships with built-in Quarry commands. Each command is documented in detail on its respective page.
 
-| Command | Description |
-| --- | --- |
-| `db:seed` | Run database seeders |
-| `db:seed:list` | List available database seeders |
+### General
+
+| Command | Description | Docs |
+| --- | --- | --- |
+| `help` | Show help or list all commands | — |
+| `route:list` | List all registered routes | [Controllers and Routing](/core-concepts/controllers-and-routing/#cli-testing-routes) |
+| `event:list` | List all registered event listeners | [Events](/core-concepts/events/#inspecting-listeners) |
+| `schedule:list` | List all registered cron jobs | [Cron Jobs](/integrations/cron-jobs/#inspecting-cron-jobs) |
+| `queue:list` | List all registered queue consumers | [Queues](/integrations/queues/#inspecting-consumers) |
+
+### API and MCP
+
+| Command | Description | Docs |
+| --- | --- | --- |
+| `api` | Call an API route directly | [Controllers and Routing](/core-concepts/controllers-and-routing/#cli-testing-routes) |
+| `mcp:serve` | Start MCP stdio server exposing routes as tools | [AI Integration](/integrations/ai/) |
+| `mcp:tools` | List API routes exposed as MCP tools | [AI Integration](/integrations/ai/) |
+
+### Seeders
+
+| Command | Description | Docs |
+| --- | --- | --- |
+| `db:seed` | Run database seeders | [Seeders](/framework/seeders/) |
+| `db:seed:list` | List available database seeders | [Seeders](/framework/seeders/) |
+
+### Database (`@stratal/framework`)
+
+| Command | Description | Docs |
+| --- | --- | --- |
+| `db:generate` | Generate ZenStack ORM client | [Database](/framework/database/#cli-commands) |
+| `db:pull` | Introspect database and generate schema | [Database](/framework/database/#cli-commands) |
+| `db:push` | Push schema changes to database | [Database](/framework/database/#cli-commands) |
+| `migrate:dev` | Create and apply a migration | [Database](/framework/database/#cli-commands) |
+| `migrate:deploy` | Deploy pending migrations | [Database](/framework/database/#cli-commands) |
+| `migrate:reset` | Reset database | [Database](/framework/database/#cli-commands) |
+| `migrate:status` | Check migration status | [Database](/framework/database/#cli-commands) |
 
 <Aside type="tip">
-  See [Seeders](/framework/seeders/) for full documentation on creating and running database seeders.
+  Run `npx quarry help` to see all available commands, or `npx quarry help <command>` for usage details on a specific command.
 </Aside>
 
 ## How it works
@@ -235,12 +267,14 @@ Use `TestingModule.quarry()` to test commands with a fluent API:
 
 ```typescript
 import { describe, it } from 'vitest'
-import { TestingModule } from '@stratal/testing'
+import { Test } from '@stratal/testing'
 import { AppModule } from '../src/app.module'
 
 describe('AddTaskCommand', () => {
   it('creates a task', async () => {
-    const module = await TestingModule.create(AppModule)
+    const module = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile()
 
     const result = await module
       .quarry('task:add')
@@ -252,7 +286,9 @@ describe('AddTaskCommand', () => {
   })
 
   it('fails without a title', async () => {
-    const module = await TestingModule.create(AppModule)
+    const module = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile()
 
     const result = await module
       .quarry('task:add')
@@ -283,5 +319,6 @@ You can also access `result.exitCode`, `result.output`, and `result.errors` dire
 ## Next steps
 
 - [Seeders](/framework/seeders/) for populating your database via CLI commands.
+- [AI Integration](/integrations/ai/) for exposing your API as MCP tools.
 - [Dependency Injection](/core-concepts/dependency-injection/) for understanding how providers work.
 - [Testing Module](/testing/testing-module/) for the full `TestingModule` API.

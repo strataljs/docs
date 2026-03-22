@@ -76,12 +76,14 @@ export class PermissionsService {
 | --- | --- |
 | `addRoleForUser(userId, role)` | Assign a role to a user |
 | `deleteRoleForUser(userId, role)` | Remove a role from a user |
+| `deleteRolesForUser(userId)` | Remove all roles for a user |
 | `getRolesForUser(userId)` | Get all directly assigned roles |
 | `getImplicitRolesForUser(userId)` | Get all roles including inherited ones |
 | `hasRoleForUser(userId, role)` | Check if a user has a specific role |
 | `setRolesForUser(userId, roles[])` | Replace all roles for a user |
 | `getCurrentUserRoles()` | Get roles for the current request's user |
 | `currentUserHasRole(role)` | Check if current user has a role |
+| `getImplicitUsersForRole(role)` | Get all users with a role (direct + inherited) |
 
 ### Role hierarchy
 
@@ -124,14 +126,10 @@ Use `getImplicitRolesForUser()` to see the full role chain including inherited r
 
 ## Database-backed policies
 
-The `RbacModule` uses a ZenStack database adapter for policy storage. Policies are persisted in the database and loaded into the Casbin enforcer. The `CasbinEnforcerService` manages the enforcer lifecycle:
-
-- Lazy-loads and caches the enforcer on first use
-- Seeds default policies and role hierarchies on initialization
-- Provides `clearCache()` to refresh the enforcer when policies change
+Policies are persisted in the database via a ZenStack adapter. The `defaultPolicies` and `roleHierarchy` you define in `RbacModule.forRoot()` are seeded automatically on initialization.
 
 <Aside type="tip">
-  Call `clearCache()` on the `CasbinEnforcerService` after modifying policies programmatically to ensure the enforcer picks up the changes.
+  If you modify policies programmatically (e.g., adding roles or permissions at runtime), call `clearCache()` on the `CasbinEnforcerService` to ensure the changes take effect.
 </Aside>
 
 ## Next steps

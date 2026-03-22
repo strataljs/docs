@@ -344,6 +344,21 @@ Because the sync provider calls consumers inline, any error thrown in `handle` p
 - **Design for idempotency.** Messages may be delivered more than once. Check `message.id` before processing to avoid duplicate side effects.
 - **Separate queues for different domains.** Use dedicated queues (`notifications-queue`, `analytics-queue`, `email-queue`) rather than routing everything through a single global queue.
 
+## Inspecting consumers
+
+Use the `queue:list` [Quarry CLI](/core-concepts/quarry-cli/) command to see all registered queue consumers in your application:
+
+```bash
+npx quarry queue:list
+```
+
+This outputs a table with the following columns:
+
+| Column | Description |
+| --- | --- |
+| Consumer | The consumer class name |
+| Message Types | Comma-separated list of message types the consumer handles |
+
 ## Next steps
 
 - [Modules](/core-concepts/modules/) to learn how the `consumers` array fits into module configuration.

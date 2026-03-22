@@ -1,0 +1,248 @@
+---
+title: AI Integration
+description: Expose your Stratal API as MCP tools for AI agents and use Stratal skills for AI-powered development.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Stratal can expose your API routes as [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) tools, letting AI agents interact with your application directly. It also provides skills that teach AI agents the framework's conventions and patterns.
+
+## MCP Server
+
+### What is MCP?
+
+The Model Context Protocol (MCP) is an open standard for connecting AI agents to external tools and data sources. Stratal's MCP integration automatically converts your routes into MCP tools that AI agents can discover and call. Since Stratal generates an OpenAPI spec from your routes out of the box, the MCP server works with no additional setup.
+
+<Aside type="tip">
+  To customize the API title, description, or other metadata shown to AI agents, see [OpenAPI Setup](/openapi/setup/).
+</Aside>
+
+### Listing available tools
+
+Use `mcp:tools` to preview which routes will be exposed as MCP tools:
+
+```bash
+npx quarry mcp:tools
+```
+
+This outputs a table with all discovered tools:
+
+| Column | Description |
+| --- | --- |
+| Name | Tool name (from `operationId` or generated from method + path) |
+| Method | HTTP method (GET, POST, etc.) |
+| Path | Route path |
+| Description | From the route's `summary` and `description` |
+
+#### Filtering
+
+```bash
+# Only show tools tagged "Users" in OpenAPI
+npx quarry mcp:tools --tag Users
+
+# Only show tools under /api/admin
+npx quarry mcp:tools --path /api/admin
+
+# Combine filters
+npx quarry mcp:tools --tag Users --tag Admin --path /api/v1
+```
+
+| Option | Description |
+| --- | --- |
+| `--tag` | Filter by OpenAPI tag (repeatable) |
+| `--path` | Filter by path prefix |
+
+### Starting the MCP server
+
+```bash
+npx quarry mcp:serve
+```
+
+This starts an MCP server using the stdio transport. The server registers each API route as an MCP tool and exposes the full OpenAPI spec as a resource at `openapi://spec`.
+
+| Option | Description |
+| --- | --- |
+| `--url` | Base URL for dispatching to a remote API (e.g., `https://api.example.com`) |
+| `--header` | Headers as `Key:Value` (repeatable) |
+| `--tag` | Only expose routes with these OpenAPI tags (repeatable) |
+| `--path` | Only expose routes matching this path prefix |
+
+### How routes become tools
+
+Each OpenAPI operation is converted into an MCP tool:
+
+- **Tool name** — uses the route's `operationId` if set, otherwise generates one from the method and path (e.g., `get_api_users`)
+- **Description** — combines the route's `summary` and `description`
+- **Input schema** — built from path parameters, query parameters, and request body:
+
+| Source | Input key format | Example |
+| --- | --- | --- |
+| Path parameter `:id` | `path_id` | `{ "path_id": "abc-123" }` |
+| Query parameter `page` | `query_page` | `{ "query_page": "2" }` |
+| Request body | `body` | `{ "body": { "name": "Alice" } }` |
+
+When a tool is called, path parameters are interpolated, query strings are assembled, and the request is dispatched to your application.
+
+### Dispatching to a remote API
+
+By default, `mcp:serve` dispatches requests to your local application. Use `--url` to send requests to a deployed API instead:
+
+```bash
+# Point at a deployed staging API
+npx quarry mcp:serve --url https://staging.example.com --header "Authorization:Bearer token123"
+```
+
+This is useful for letting AI agents interact with a live environment while using your local OpenAPI spec for tool definitions.
+
+### OpenAPI spec as resource
+
+The MCP server exposes the full OpenAPI specification as a resource at `openapi://spec`. AI agents can read this resource to understand your API structure without calling individual tools.
+
+## Client installation
+
+Configure your AI agent to connect to the Stratal MCP server. Each example assumes your project is at `/path/to/your/project` — replace this with the actual path to your Stratal application.
+
+<Tabs>
+<TabItem label="Claude Code">
+
+Add to your project's `.claude/settings.local.json`:
+
+```json
+{
+  "mcpServers": {
+    "stratal": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["quarry", "mcp:serve"],
+      "cwd": "/path/to/your/project"
+    }
+  }
+}
+```
+
+Or with filters and remote dispatch:
+
+```json
+{
+  "mcpServers": {
+    "stratal": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "quarry", "mcp:serve",
+        "--tag", "Users",
+        "--url", "https://api.example.com",
+        "--header", "Authorization:Bearer token123"
+      ],
+      "cwd": "/path/to/your/project"
+    }
+  }
+}
+```
+
+</TabItem>
+<TabItem label="Claude Desktop">
+
+Add to your Claude Desktop config file:
+
+- **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+- **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "stratal": {
+      "command": "npx",
+      "args": ["quarry", "mcp:serve"],
+      "cwd": "/path/to/your/project"
+    }
+  }
+}
+```
+
+</TabItem>
+<TabItem label="VS Code">
+
+Add to your project's `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "stratal": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["quarry", "mcp:serve"],
+      "cwd": "${workspaceFolder}"
+    }
+  }
+}
+```
+
+</TabItem>
+<TabItem label="Windsurf">
+
+Add to `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "stratal": {
+      "command": "npx",
+      "args": ["quarry", "mcp:serve"],
+      "cwd": "/path/to/your/project"
+    }
+  }
+}
+```
+
+</TabItem>
+<TabItem label="OpenCode">
+
+Add to your project's `opencode.json`:
+
+```json
+{
+  "mcp": {
+    "stratal": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["quarry", "mcp:serve"],
+      "cwd": "/path/to/your/project"
+    }
+  }
+}
+```
+
+</TabItem>
+</Tabs>
+
+## Stratal skills
+
+Stratal provides AI skills that teach your AI agent the framework's conventions, patterns, and APIs. When installed, your AI agent automatically applies Stratal best practices — correct decorators, import paths, module structure, and more.
+
+### What skills provide
+
+- **Framework rules** — patterns that prevent runtime failures (DI decorators, import paths, ESM requirements)
+- **Reference guides** — modules, routing, DI, events, queues, cron, database, auth, RBAC, testing, and more
+- **Project scaffold** — templates for bootstrapping new Stratal projects
+- **Gotchas** — Cloudflare Workers constraints and common pitfalls
+
+### Installing skills
+
+Use the [`skills`](https://www.npmjs.com/package/skills) CLI to install the Stratal skill into your project:
+
+```bash
+npx skills add strataljs/stratal
+```
+
+This installs the Stratal skill into your project's `.agents/` directory. Your AI agent automatically discovers and uses the skill when working with Stratal code.
+
+<Aside type="tip">
+  Commit the `.agents/` directory to your repository so all team members benefit from AI-assisted Stratal development.
+</Aside>
+
+## Next steps
+
+- [OpenAPI Setup](/openapi/setup/) for customizing the API title, description, and metadata exposed to AI agents.
+- [Quarry CLI](/core-concepts/quarry-cli/) for the full CLI framework reference.
+- [Controllers and Routing](/core-concepts/controllers-and-routing/) for defining the routes that become MCP tools.

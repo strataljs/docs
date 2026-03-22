@@ -91,7 +91,7 @@ const adminAttrs = new UserFactory().admin().make()
 // { email: '...', firstName: '...', role: 'admin' }
 ```
 
-`makeMany()` returns an array:
+`makeMany()` returns an array. Use `count()` to specify how many instances to create (defaults to `1` when not called):
 
 ```typescript
 const users = new UserFactory().count(5).makeMany()

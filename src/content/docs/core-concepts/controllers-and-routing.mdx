@@ -295,6 +295,68 @@ Controller-level guards run first, followed by method-level guards. If any guard
 
 For a complete guide on writing guards, see the [Guards guide](/guides/guards/).
 
+## CLI: Testing routes
+
+Stratal includes built-in [Quarry CLI](/core-concepts/quarry-cli/) commands for inspecting and calling your routes.
+
+### Listing routes
+
+Use `route:list` to see all registered routes:
+
+```bash
+npx quarry route:list
+```
+
+This outputs a table with the following columns:
+
+| Column | Description |
+| --- | --- |
+| Method | HTTP method (GET, POST, etc.) or WS for WebSocket routes |
+| Path | The full route path |
+| Action | The handler name (controller method) |
+| Type | `HTTP` or `WS` |
+
+Filter by method or path:
+
+```bash
+# Only GET routes
+npx quarry route:list --method GET
+
+# Routes containing "users"
+npx quarry route:list --path users
+
+# Combine filters
+npx quarry route:list --method POST --path /api/admin
+```
+
+### Calling routes directly
+
+Use the `api` command to call any route from the terminal:
+
+```bash
+# GET request (default)
+npx quarry api /api/users
+
+# POST with JSON body
+npx quarry api /api/users --method POST --data '{"name":"Alice","email":"alice@example.com"}'
+
+# With custom headers and query parameters
+npx quarry api /api/users --header "Authorization:Bearer token123" --query "page=2" --query "limit=10"
+```
+
+| Option | Description |
+| --- | --- |
+| `--method` | HTTP method (defaults to GET) |
+| `--data` | JSON request body |
+| `--header` | Header as `Key:Value` (repeatable) |
+| `--query` | Query parameter as `key=value` (repeatable) |
+
+The response displays the status, headers, and formatted body.
+
+<Aside type="tip">
+  Running `npx quarry api` without a route argument shows the route list, equivalent to `route:list`.
+</Aside>
+
 ## Next steps
 
 - [HTTP Method Decorators](/core-concepts/http-method-decorators/) for explicit `@Get`, `@Post`, etc. when you need custom paths or non-CRUD endpoints.

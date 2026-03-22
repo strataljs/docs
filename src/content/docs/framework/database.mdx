@@ -236,40 +236,63 @@ This provides full type safety — `DatabaseService` returns a client typed with
 
 ## CLI commands
 
-Use the standard `zenstack` CLI with the `--schema` flag to target each connection's schema independently.
+`@stratal/framework` registers database and migration commands with the [Quarry CLI](/core-concepts/quarry-cli/). Use the `--schema` flag to target each connection's schema independently.
 
-### Migrations
+<Aside type="note">
+  These commands wrap the ZenStack CLI under the hood. They require `@stratal/framework` to be installed and `DatabaseModule` to be configured.
+</Aside>
+
+### Database commands
 
 ```bash
-# Run dev migrations for the main connection
-zenstack migrate dev --schema db/main/schema.zmodel --name add_users_table
+# Generate ZenStack ORM client
+npx quarry db:generate
 
-# Deploy migrations to production
-zenstack migrate deploy --schema db/main/schema.zmodel
+# Generate with watch mode for development
+npx quarry db:generate --watch
+
+# Introspect an existing database and generate schema
+npx quarry db:pull --schema db/main/schema.zmodel
+
+# Push schema changes to the database (skips migration history)
+npx quarry db:push --schema db/main/schema.zmodel
+```
+
+| Command | Options | Description |
+| --- | --- | --- |
+| `db:generate` | `--schema`, `--watch` | Generate ZenStack ORM client |
+| `db:pull` | `--schema` | Introspect database and generate schema |
+| `db:push` | `--schema`, `--accept-data-loss`, `--force-reset` | Push schema changes to database |
+
+### Migration commands
+
+```bash
+# Create and apply a migration
+npx quarry migrate:dev --schema db/main/schema.zmodel --name add_users_table
+
+# Create migration without applying
+npx quarry migrate:dev --schema db/main/schema.zmodel --name add_users_table --create-only
+
+# Deploy pending migrations to production
+npx quarry migrate:deploy --schema db/main/schema.zmodel
 
 # Check migration status
-zenstack migrate status --schema db/main/schema.zmodel
+npx quarry migrate:status --schema db/main/schema.zmodel
 
-# Reset database
-zenstack migrate reset --schema db/main/schema.zmodel
+# Reset database (destructive)
+npx quarry migrate:reset --schema db/main/schema.zmodel --force
 ```
 
-### Schema push
+| Command | Options | Description |
+| --- | --- | --- |
+| `migrate:dev` | `--schema`, `--name`, `--create-only` | Create and apply a migration |
+| `migrate:deploy` | `--schema` | Deploy pending migrations |
+| `migrate:status` | `--schema` | Check migration status |
+| `migrate:reset` | `--schema`, `--force`, `--skip-seed` | Reset database |
 
-```bash
-# Push schema to database (skips migration history)
-zenstack db push --schema db/main/schema.zmodel
-
-# Push analytics schema
-zenstack db push --schema db/analytics/schema.zmodel
-```
-
-### Common options
-
-| Option | Description |
-| --- | --- |
-| `--schema <path>` | Path to the connection's `.zmodel` schema file |
-| `--name <name>` | Migration name (for `migrate dev`) |
+<Aside type="caution">
+  `db:push --force-reset` and `migrate:reset` are destructive operations that will drop all data. Use with care.
+</Aside>
 
 ## Next steps
 

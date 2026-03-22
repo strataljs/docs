@@ -51,11 +51,13 @@ export class UserSeeder extends Seeder {
 Use `TestingModule.seed()` to run one or more seeders. Pass seeder class constructors (not instances):
 
 ```typescript
-import { TestingModule } from '@stratal/testing'
+import { Test, type TestingModule } from '@stratal/testing'
 import { UserSeeder } from './seeders/user.seeder'
 import { RoleSeeder } from './seeders/role.seeder'
 
-const module = await TestingModule.create(AppModule)
+const module = await Test.createTestingModule({
+  imports: [AppModule],
+}).compile()
 
 // Run a single seeder
 await module.seed(UserSeeder)
@@ -91,14 +93,16 @@ A common pattern is to truncate the database and re-seed before each test:
 
 ```typescript
 import { describe, beforeEach, afterAll, it } from 'vitest'
-import { TestingModule } from '@stratal/testing'
+import { Test, type TestingModule } from '@stratal/testing'
 import { UserSeeder } from './seeders/user.seeder'
 
 describe('UsersController', () => {
   let module: TestingModule
 
   beforeEach(async () => {
-    module = await TestingModule.create(AppModule)
+    module = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile()
     await module.truncateDb()
     await module.seed(UserSeeder)
   })

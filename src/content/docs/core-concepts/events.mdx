@@ -173,6 +173,24 @@ async onUserVerified(context: EventContext<'user.verified'>) {
 }
 ```
 
+## Inspecting listeners
+
+Use the `event:list` [Quarry CLI](/core-concepts/quarry-cli/) command to see all registered event listeners in your application:
+
+```bash
+npx quarry event:list
+```
+
+This outputs a table with the following columns:
+
+| Column | Description |
+| --- | --- |
+| Event | The event pattern the handler listens for |
+| Listener | The listener class name |
+| Method | The handler method name |
+| Priority | The handler's priority value |
+| Blocking | Whether the handler blocks the emitter |
+
 ## Next steps
 
 - [Database Events](/framework/database-events/) for events emitted automatically by database operations.

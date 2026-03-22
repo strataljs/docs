@@ -153,6 +153,21 @@ When Cloudflare fires a cron trigger, `Stratal.scheduled(controller)` is called.
   You can override the `scheduled` method in your worker for custom pre- or post-processing, but make sure to call `super.scheduled(controller)` or `app.handleScheduled(controller)` to keep the standard job execution flow.
 </Aside>
 
+## Inspecting cron jobs
+
+Use the `schedule:list` [Quarry CLI](/core-concepts/quarry-cli/) command to see all registered cron jobs in your application:
+
+```bash
+npx quarry schedule:list
+```
+
+This outputs a table with the following columns:
+
+| Column | Description |
+| --- | --- |
+| Schedule | The cron expression |
+| Job | The job class name |
+
 ## Next steps
 
 - [Queues](/integrations/queues/) for async message processing alongside scheduled tasks.
