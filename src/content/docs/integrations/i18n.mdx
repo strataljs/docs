@@ -20,24 +20,14 @@ You do not need to import the module for basic i18n support to work.
 
 ## Configuration
 
-To add your own translations or support additional locales, call `I18nModule.forRoot()` in your root module:
+To support additional locales, call `I18nModule.forRoot()` in your root module. This method accepts locale configuration only — it does not accept messages.
 
 ```typescript
 import { Module } from 'stratal/module'
 import { I18nModule } from 'stratal/i18n'
-import type { I18nModuleOptions } from 'stratal/i18n'
-import * as en from './messages/en'
-import * as fr from './messages/fr'
-
-const i18nConfig: I18nModuleOptions = {
-  defaultLocale: 'en',
-  fallbackLocale: 'en',
-  locales: ['en', 'fr'],
-  messages: { en, fr },
-}
 
 @Module({
-  imports: [I18nModule.forRoot(i18nConfig)],
+  imports: [I18nModule.forRoot({ defaultLocale: 'en', fallbackLocale: 'en', locales: ['en', 'fr'] })],
 })
 export class AppModule {}
 ```
@@ -49,7 +39,52 @@ export class AppModule {}
 | `defaultLocale` | `string` | `'en'` | Locale used when no `X-Locale` header is present |
 | `fallbackLocale` | `string` | `'en'` | Locale used when a translation key is missing in the requested locale |
 | `locales` | `string[]` | `['en']` | List of supported locales |
-| `messages` | `Record<string, Record<string, unknown>>` | `{}` | Application-specific messages, keyed by locale |
+
+## Registering messages
+
+Use `I18nModule.registerMessages()` to add translations. This is separate from `forRoot()` so that any module — not just the root module — can contribute its own messages.
+
+```typescript
+import { Module } from 'stratal/module'
+import { I18nModule } from 'stratal/i18n'
+import * as en from './messages/en'
+import * as fr from './messages/fr'
+
+@Module({
+  imports: [I18nModule.registerMessages({ en, fr })],
+})
+export class AppModule {}
+```
+
+You can call `registerMessages()` as many times as needed, from any module in your application. Each call deep-merges the provided messages with the existing set. If two calls define the same leaf key, the later call wins.
+
+```typescript
+// Root module registers app-wide messages
+@Module({
+  imports: [
+    I18nModule.forRoot({ defaultLocale: 'en', locales: ['en', 'fr'] }),
+    I18nModule.registerMessages({
+      en: { common: { welcome: 'Welcome' } },
+      fr: { common: { welcome: 'Bienvenue' } },
+    }),
+    PaymentsModule,
+  ],
+})
+export class AppModule {}
+
+// PaymentsModule registers its own messages
+@Module({
+  imports: [
+    I18nModule.registerMessages({
+      en: { payments: { receiptSent: 'Receipt sent to {email}' } },
+      fr: { payments: { receiptSent: 'Reçu envoyé à {email}' } },
+    }),
+  ],
+})
+export class PaymentsModule {}
+```
+
+This makes it easy for packages and feature modules to ship their own translations without requiring the root module to know about them.
 
 ## Defining messages
 
@@ -85,7 +120,7 @@ export const users = {
 </TabItem>
 </Tabs>
 
-Your application messages are deep-merged with the built-in system messages. If you define a key that already exists in the system messages, your value takes precedence.
+All registered messages are deep-merged with the built-in system messages. If you define a key that already exists in the system messages, your value takes precedence.
 
 ## Using translations
 

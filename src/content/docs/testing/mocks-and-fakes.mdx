@@ -5,7 +5,7 @@ description: FakeStorageService, FetchMock, and test environment helpers.
 
 import { Aside } from '@astrojs/starlight/components';
 
-`@stratal/testing` provides several tools for isolating your code from external dependencies: deep mocks with `createMock`, an in-memory `FakeStorageService`, fetch interception with `MockFetch` (built on [MSW](https://mswjs.io/)), and a nodemailer mock for email testing.
+`@stratal/testing` provides several tools for isolating your code from external dependencies: deep mocks with `createMock`, an in-memory `FakeStorageService` (via `@stratal/testing/storage`), fetch interception with `MockFetch` (built on [MSW](https://mswjs.io/)), and a nodemailer mock for email testing.
 
 ## Deep mocks with createMock
 
@@ -60,7 +60,13 @@ Every test module automatically registers a `FakeStorageService` that replaces t
 
 `FakeStorageService` extends `StorageService` and uses an in-memory `Map` instead of S3. All storage operations (upload, download, delete, exists, presigned URLs) work without real cloud credentials. It is registered as a singleton in the test container so files uploaded during setup are available when consumers run.
 
-Access it through `module.storage`:
+Access it through `module.storage` (recommended), or import directly from `@stratal/testing/storage` for custom setups:
+
+```typescript
+import { FakeStorageService } from '@stratal/testing/storage'
+```
+
+Most tests only need `module.storage`:
 
 ```typescript
 module.storage.assertExists('uploads/avatar.png')
