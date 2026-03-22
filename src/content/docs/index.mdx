@@ -7,12 +7,14 @@ hero:
   actions: []
 ---
 
+import { AIShowcase } from '../../components/landing/AIShowcase';
 import { CodeShowcase } from '../../components/landing/CodeShowcase';
 import { FeaturesGrid } from '../../components/landing/FeaturesGrid';
 import { QuickStart } from '../../components/landing/QuickStart';
 import { WhyStratal } from '../../components/landing/WhyStratal';
 import { FooterCTA } from '../../components/landing/FooterCTA';
 
+<AIShowcase client:visible />
 <CodeShowcase client:visible />
 <FeaturesGrid client:visible />
 <QuickStart client:visible />

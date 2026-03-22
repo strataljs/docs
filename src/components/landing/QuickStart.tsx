@@ -53,6 +53,16 @@ export function QuickStart() {
               <p className="text-sm leading-relaxed">
                 Scaffold a complete Stratal app with AI — routes, modules, and tests generated from your description.
               </p>
+              <a
+                href="/getting-started/ai/"
+                className="mt-3 inline-flex items-center gap-1 text-sm font-medium transition-colors"
+                style={{ color: 'var(--sl-color-accent)' }}
+              >
+                Learn more
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                  <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </a>
             </div>
           </div>
         </AnimatedSection>

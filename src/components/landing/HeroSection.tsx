@@ -45,7 +45,7 @@ export function HeroSection() {
               transition={{ duration: 0.6, delay: 0.3 }}
             >
               <a
-                href="/getting-started/installation/"
+                href="/getting-started/ai/"
                 className="landing-btn-primary inline-flex items-center gap-2 rounded-lg px-6 py-3 text-sm font-semibold transition-all"
               >
                 Get Started

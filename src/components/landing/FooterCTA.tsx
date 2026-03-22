@@ -12,7 +12,7 @@ export function FooterCTA() {
           <p className="landing-subtitle mt-4 text-lg">Get started in under a minute.</p>
           <div className="mt-8">
             <a
-              href="/getting-started/installation/"
+              href="/getting-started/ai/"
               className="landing-btn-primary inline-flex items-center gap-2 rounded-lg px-6 py-3 sm:px-8 sm:py-4 text-base font-semibold transition-all"
             >
               Get Started
