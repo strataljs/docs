@@ -3,7 +3,7 @@ title: Installation
 description: Get started with the create-stratal CLI or add Stratal to an existing project manually.
 ---
 
-import { Tabs, TabItem } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 ## Prerequisites
 
@@ -62,6 +62,40 @@ npm run dev
 ```
 
 Head to [Your First Worker](/getting-started/your-first-worker/) for a walkthrough of the generated code.
+
+## AI-powered development
+
+Stratal provides AI skills that teach your AI agent the framework's conventions, patterns, and APIs. With the skill installed, your AI agent can scaffold new projects, generate controllers, services, and modules, and wire dependency injection — all following Stratal best practices.
+
+### Install the Stratal skill
+
+```bash
+npx skills add strataljs/stratal
+```
+
+This installs the Stratal skill into your project's `.agents/` directory. Your AI agent automatically discovers and uses the skill when working with Stratal code.
+
+<Aside type="tip">
+  Commit the `.agents/` directory to your repository so all team members benefit from AI-assisted Stratal development.
+</Aside>
+
+### MCP server
+
+Stratal can also expose your API routes as [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) tools, letting AI agents discover and call your endpoints directly. Since Stratal generates an OpenAPI spec from your routes out of the box, the MCP server works with no additional setup.
+
+Preview which routes are available as tools:
+
+```bash
+npx quarry mcp:tools
+```
+
+Start the MCP server:
+
+```bash
+npx quarry mcp:serve
+```
+
+See [AI Integration](/getting-started/ai/) for client configuration, filtering options, and remote dispatch.
 
 ## Add to an existing project
 

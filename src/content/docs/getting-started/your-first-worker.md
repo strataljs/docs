@@ -43,6 +43,28 @@ A few things to note:
 - **`@Route`** configures the route. The `response` property is a Zod schema that validates the response body and feeds into automatic OpenAPI documentation.
 - **`RouterContext`** gives you access to the request, params, and helper methods like `ctx.json()`.
 
+## AI-powered development
+
+If you have an AI agent (Claude Code, VS Code Copilot, Windsurf, etc.), install the Stratal skill so it understands these conventions out of the box:
+
+```bash
+npx skills add strataljs/stratal
+```
+
+With the skill installed, your AI agent knows how `@Controller` paths map to routes, how `IController` methods map to HTTP verbs, how `@Route` schemas feed into OpenAPI, and how modules wire everything together. It can generate controllers, services, modules, and DI bindings following these exact patterns — so you can describe what you want and let your agent build it.
+
+Once your routes are running, you can also expose them as [MCP](https://modelcontextprotocol.io/) tools so AI agents can discover and call your API endpoints directly:
+
+```bash
+# Preview available tools
+npx quarry mcp:tools
+
+# Start the MCP server
+npx quarry mcp:serve
+```
+
+See [AI Integration](/getting-started/ai/) for client configuration and the full MCP setup.
+
 ## Create the root module
 
 Every Stratal application has a **root module** that declares which controllers (and later, providers) belong to the app. Create `src/app.module.ts`:

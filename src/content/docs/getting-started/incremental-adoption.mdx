@@ -7,6 +7,27 @@ import { Aside } from '@astrojs/starlight/components';
 
 Stratal is built on top of [Hono](https://hono.dev/) and exposes its underlying `HonoApp` (which extends `OpenAPIHono`) via the `Stratal.hono` getter. This means you can mount a Stratal instance as a sub-app inside an existing Hono application, adopting it incrementally without rewriting everything at once.
 
+## AI-assisted migration
+
+Migrating an existing Hono app to Stratal involves understanding module boundaries, DI wiring, middleware ordering, queue and cron forwarding, and error handling scopes. The Stratal AI skill includes reference guides that cover all of these incremental adoption patterns, so your AI agent can help drive the migration.
+
+Install the skill:
+
+```bash
+npx skills add strataljs/stratal
+```
+
+With the skill installed, your AI agent can:
+
+- Analyze your existing Hono routes and identify candidates for migration
+- Generate Stratal modules, controllers, and services that match your current route structure
+- Wire up dependency injection, queue consumers, and cron jobs correctly
+- Handle the subtleties — async initialization, DI container scope, middleware ordering, and error handling boundaries
+
+As you migrate routes into Stratal, they're automatically included in the OpenAPI spec and can be exposed as [MCP](https://modelcontextprotocol.io/) tools via `npx quarry mcp:serve` — giving AI agents direct access to your newly migrated API endpoints.
+
+See [AI Integration](/getting-started/ai/) for the full setup, including MCP client configuration and filtering options.
+
 ## Mounting Stratal into an existing Hono app
 
 If you already have a Hono application running on Cloudflare Workers, you can mount Stratal under a route prefix using Hono's `app.route()` method.
@@ -163,6 +184,7 @@ Stratal's automatic OpenAPI documentation only covers routes registered through 
 
 ## Next steps
 
+- [AI Integration](/getting-started/ai/) for installing AI skills and exposing your migrated routes as MCP tools.
 - [Modules](/core-concepts/modules/) for organizing your application into feature modules.
 - [Controllers and Routing](/core-concepts/controllers-and-routing/) for defining routes in Stratal.
 - [Queues](/integrations/queues/) for wiring up queue consumers in Stratal.

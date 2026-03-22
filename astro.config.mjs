@@ -40,6 +40,7 @@ export default defineConfig({
           {
               label: 'Getting Started',
               items: [
+                  { label: 'AI Integration', slug: 'getting-started/ai' },
                   { label: 'Installation', slug: 'getting-started/installation' },
                   { label: 'Your First Worker', slug: 'getting-started/your-first-worker' },
                   { label: 'Project Structure', slug: 'getting-started/project-structure' },
@@ -97,7 +98,6 @@ export default defineConfig({
                   { label: 'Service Bindings', slug: 'integrations/service-bindings' },
                   { label: 'Workflows', slug: 'integrations/workflows' },
                   { label: 'WebSocket', slug: 'integrations/websocket' },
-                  { label: 'AI Integration', slug: 'integrations/ai' },
               ],
           },
           {
