@@ -39,6 +39,8 @@ The `@Controller` decorator takes two arguments:
 | `security`      | `SecurityScheme[]` | Security schemes applied to every route         |
 | `hideFromDocs`  | `boolean`    | Exclude all routes from the OpenAPI specification     |
 | `version`       | `string \| string[] \| typeof VERSION_NEUTRAL` | API version(s) for this controller (see [Versioning](/core-concepts/versioning/)) |
+| `name`          | `string`     | Name prefix for routes in this controller (used for [URL generation](#named-routes-and-url-generation)) |
+| `domain`        | `string`     | Domain pattern to restrict this controller to (e.g., `'{tenant}.myapp.com'`). See [Domain Routing](/guides/domain-routing/). |
 
 ```typescript
 @Controller('/api/admin', {
@@ -357,6 +359,80 @@ The response displays the status, headers, and formatted body.
   Running `npx quarry api` without a route argument shows the route list, equivalent to `route:list`.
 </Aside>
 
+## Route groups and the fluent router API
+
+Modules can implement the `RouteConfigurable` interface to configure routing with a fluent builder API. This gives you control over route prefixes, domain patterns, middleware, versioning, and grouping — all scoped to the module's controllers.
+
+```typescript
+import { Module, type RouteConfigurable, type Router } from 'stratal/module'
+import { AuthMiddleware } from './auth.middleware'
+
+@Module({
+  controllers: [UsersController, AdminController],
+})
+export class ApiModule implements RouteConfigurable {
+  configureRoutes(router: Router) {
+    router
+      .name('api.')
+      .middleware(AuthMiddleware)
+      .group([UsersController], (r) => {
+        r.prefix('/users').name('users.')
+      })
+      .group([AdminController], (r) => {
+        r.prefix('/admin').name('admin.').hideFromDocs()
+      })
+  }
+}
+```
+
+### Fluent methods
+
+| Method | Description |
+| --- | --- |
+| `prefix(path, params?)` | Set a path prefix for all routes. Optionally pass a Zod schema to validate path parameters. |
+| `domain(pattern)` | Restrict routes to a domain pattern (e.g., `'{tenant}.myapp.com'`). See [Domain Routing](/guides/domain-routing/). |
+| `name(prefix)` | Add a name prefix to all routes (e.g., `'api.'` makes `index` become `'api.index'`). |
+| `middleware(...classes)` | Apply middleware to all routes in scope. |
+| `version(v)` | Set the API version (string or string array). |
+| `hideFromDocs(hide?)` | Hide routes from the OpenAPI spec. |
+| `use(...classes)` | Register global middleware (root router only). |
+| `group(controllers, callback)` | Create a sub-group with its own prefix, name, middleware, etc. |
+
+### Named routes and URL generation
+
+When routes have names (from `router.name()` or `@Route({ name: '...' })`), you can generate URLs using `ctx.route()`:
+
+```typescript
+@Controller('/users')
+export class UsersController implements IController {
+  @Route({ name: 'users.show' })
+  show(ctx: RouterContext) {
+    const id = ctx.param('id')
+    return ctx.json({ id })
+  }
+
+  @Route()
+  index(ctx: RouterContext) {
+    // Generate a URL to the show route
+    const url = ctx.route('users.show', { id: '42' })
+    // → '/users/42'
+    return ctx.json({ users: [], links: { detail: url } })
+  }
+}
+```
+
+For type-safe route names, generate types with the CLI:
+
+```bash
+npx quarry route:types
+```
+
+This creates a `src/stratal.d.ts` file that provides autocomplete for route names and validates parameters.
+
+<Aside type="tip">
+  You can also generate [signed URLs](/guides/signed-urls/) with `ctx.signedUrl()` for tamper-proof, expiring links.
+</Aside>
+
 ## Next steps
 
 - [HTTP Method Decorators](/core-concepts/http-method-decorators/) for explicit `@Get`, `@Post`, etc. when you need custom paths or non-CRUD endpoints.
@@ -364,4 +440,7 @@ The response displays the status, headers, and formatted body.
 - [Modules](/core-concepts/modules/) to learn how controllers are registered in modules.
 - [Dependency Injection](/core-concepts/dependency-injection/) to inject services into your controllers.
 - [Guards guide](/guides/guards/) for writing custom guards.
+- [Domain Routing](/guides/domain-routing/) for routing by subdomain patterns.
+- [Signed URLs](/guides/signed-urls/) for generating tamper-proof links.
+- [Streaming Responses](/guides/streaming/) for streaming data to clients.
 - [OpenAPI overview](/openapi/overview/) to see how `@Route` schemas generate API documentation.

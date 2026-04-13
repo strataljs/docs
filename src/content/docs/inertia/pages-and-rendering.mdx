@@ -1,0 +1,149 @@
+---
+title: Pages & Rendering
+description: Render Inertia pages from controllers using ctx.inertia(), convention-based @InertiaRoute, and explicit HTTP method decorators.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Inertia pages are rendered from your Stratal controllers. Instead of returning JSON or HTML, you call `ctx.inertia()` to render a React component on the client, passing it the data it needs as props.
+
+## Rendering a page
+
+The `ctx.inertia()` method takes a component name, an optional props object, and optional render options:
+
+```typescript
+ctx.inertia(component: string, props?: Record<string, unknown>, options?: InertiaRenderOptions)
+```
+
+The `component` string maps to a React component in your pages directory (for example, `'Users/Index'` resolves to `src/inertia/pages/Users/Index.tsx`).
+
+## Convention-based routing with @InertiaRoute
+
+The `@InertiaRoute` decorator works the same way as `@Route` — method names map automatically to HTTP verbs and paths:
+
+| Method | HTTP verb | Path |
+| --- | --- | --- |
+| `index()` | GET | `/route` |
+| `show()` | GET | `/route/:id` |
+| `create()` | POST | `/route` |
+| `update()` | PUT | `/route/:id` |
+| `destroy()` | DELETE | `/route/:id` |
+
+Here is a full controller example:
+
+```typescript
+import { Controller, IController, RouterContext } from 'stratal/router'
+import { InertiaRoute } from '@stratal/inertia'
+
+@Controller('/users')
+export class UsersController implements IController {
+  @InertiaRoute()
+  index(ctx: RouterContext) {
+    const users = [
+      { id: '1', name: 'Alice' },
+      { id: '2', name: 'Bob' },
+    ]
+
+    return ctx.inertia('Users/Index', { users })
+  }
+
+  @InertiaRoute()
+  show(ctx: RouterContext) {
+    const user = { id: ctx.req.param('id'), name: 'Alice' }
+
+    return ctx.inertia('Users/Show', { user })
+  }
+
+  @InertiaRoute()
+  create(ctx: RouterContext) {
+    return ctx.inertia('Users/Create')
+  }
+}
+```
+
+<Aside type="note">
+  `@InertiaRoute` sets `hideFromDocs: true` by default, which excludes these routes from the OpenAPI specification. You can override this by passing `@InertiaRoute({ hideFromDocs: false })`.
+</Aside>
+
+## Explicit HTTP method decorators
+
+For routes that do not follow RESTful conventions, use the explicit decorators: `@InertiaGet`, `@InertiaPost`, `@InertiaPut`, `@InertiaPatch`, and `@InertiaDelete`.
+
+```typescript
+import { Controller, RouterContext } from 'stratal/router'
+import { InertiaGet, InertiaPost } from '@stratal/inertia'
+
+@Controller('/dashboard')
+export class DashboardController {
+  @InertiaGet('/')
+  overview(ctx: RouterContext) {
+    return ctx.inertia('Dashboard/Overview', {
+      stats: { totalUsers: 150, activeToday: 42 },
+    })
+  }
+
+  @InertiaGet('/settings')
+  settings(ctx: RouterContext) {
+    return ctx.inertia('Dashboard/Settings', {
+      preferences: { theme: 'dark', language: 'en' },
+    })
+  }
+
+  @InertiaPost('/settings')
+  updateSettings(ctx: RouterContext) {
+    // process form submission...
+    return ctx.inertia('Dashboard/Settings', {
+      preferences: { theme: 'light', language: 'en' },
+    })
+  }
+}
+```
+
+<Aside type="caution">
+  You cannot mix `@InertiaRoute` and explicit decorators (`@InertiaGet`, `@InertiaPost`, etc.) in the same controller. Choose one approach per controller.
+</Aside>
+
+## Render options
+
+The third argument to `ctx.inertia()` accepts an `InertiaRenderOptions` object:
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `encryptHistory` | `boolean` | Encrypt the page data stored in the browser history state |
+| `clearHistory` | `boolean` | Clear all existing history entries when rendering this page |
+| `preserveFragment` | `boolean` | Preserve the URL fragment (hash) across navigations |
+
+```typescript
+@InertiaRoute()
+show(ctx: RouterContext) {
+  return ctx.inertia('Users/Show', { user }, {
+    encryptHistory: true,
+    clearHistory: false,
+  })
+}
+```
+
+## Page component type safety
+
+You can get full type safety for your page components by augmenting the `InertiaPageRegistry` interface. Create or update a `global.d.ts` file in your project root:
+
+```typescript
+import type { PageProps as IndexPageProps } from './src/inertia/pages/Users/Index'
+import type { PageProps as ShowPageProps } from './src/inertia/pages/Users/Show'
+import type { PageProps as CreatePageProps } from './src/inertia/pages/Users/Create'
+
+declare module '@stratal/inertia' {
+  interface InertiaPageRegistry {
+    'Users/Index': IndexPageProps
+    'Users/Show': ShowPageProps
+    'Users/Create': CreatePageProps
+  }
+}
+```
+
+With this in place, `ctx.inertia('Users/Index', props)` will type-check `props` against the registered type for that component name.
+
+## Next steps
+
+- [Shared Data & Props](/inertia/shared-data-and-props/) — Share global data and control prop loading with deferred, optional, and merge strategies.
+- [Overview & Setup](/inertia/overview/) — Review the module configuration and template setup.

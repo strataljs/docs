@@ -1,0 +1,96 @@
+---
+title: Streaming Responses
+description: Stream binary data, text, and Server-Sent Events from your controllers using the built-in streaming API.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+Stratal provides three streaming methods on `RouterContext`, each tailored to a different content type. All three follow the same callback pattern and support optional error handling.
+
+## Binary streaming
+
+Use `ctx.stream()` to send raw binary or encoded data. You are responsible for encoding the content before writing.
+
+```typescript
+import { Controller, Route, type RouterContext } from 'stratal/router'
+
+@Controller('/data')
+class DataController {
+  @Route()
+  show(ctx: RouterContext) {
+    return ctx.stream(async (stream) => {
+      await stream.write(new TextEncoder().encode('chunk 1'))
+      await stream.write(new TextEncoder().encode('chunk 2'))
+      await stream.close()
+    })
+  }
+}
+```
+
+## Text streaming
+
+Use `ctx.streamText()` for plain text responses. This method automatically sets the `Content-Encoding: Identity` header, which is required for streaming to work on Cloudflare Workers.
+
+```typescript
+@Route()
+show(ctx: RouterContext) {
+  return ctx.streamText(async (stream) => {
+    await stream.write('Hello ')
+    await stream.write('World')
+    await stream.close()
+  })
+}
+```
+
+This is particularly useful for streaming AI model responses token by token.
+
+## Server-Sent Events
+
+Use `ctx.streamSSE()` to send an SSE stream. The correct `Content-Type` and `Content-Encoding` headers are set automatically.
+
+```typescript
+@Route()
+index(ctx: RouterContext) {
+  return ctx.streamSSE(async (stream) => {
+    for (let i = 0; i < 5; i++) {
+      await stream.writeSSE({
+        event: 'message',
+        data: JSON.stringify({ count: i }),
+        id: String(i),
+      })
+      await stream.sleep(1000)
+    }
+  })
+}
+```
+
+The `writeSSE()` method accepts an object with the following fields:
+
+| Field | Type | Description |
+|---|---|---|
+| `event` | `string` | The event name the client listens for. |
+| `data` | `string` | The event payload. Serialize objects with `JSON.stringify()`. |
+| `id` | `string` | Optional event ID for client reconnection tracking. |
+
+The `stream.sleep()` helper pauses for the given number of milliseconds, which is handy for throttling or simulating intervals.
+
+## Error handling
+
+All three streaming methods accept an optional second argument -- an error callback that is invoked if the stream callback throws.
+
+```typescript
+ctx.streamSSE(
+  async (stream) => {
+    // stream logic...
+  },
+  async (err) => {
+    console.error('Stream error:', err)
+  }
+)
+```
+
+Without an error handler, exceptions inside the stream callback will be silently swallowed after the response headers have already been sent.
+
+<Aside>
+  Cloudflare Workers require `Content-Encoding: Identity` for streaming responses. The `streamText()` and `streamSSE()` methods set this header automatically, so you do not need to configure it yourself.
+</Aside>

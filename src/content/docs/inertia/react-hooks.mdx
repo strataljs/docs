@@ -1,0 +1,119 @@
+---
+title: React Hooks
+description: Use the useRoute and useI18n hooks in your React components for type-safe URL generation and translations.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal Inertia ships two React hooks that give your components access to server-side routing and internationalization data. Both hooks are available from `@stratal/inertia/react`.
+
+## useRoute
+
+The `useRoute` hook provides type-safe URL generation and route matching inside your React components. It works like Laravel's Ziggy — named routes defined on the server are available on the client without hardcoding paths.
+
+### Prerequisites
+
+Enable route sharing in your module setup:
+
+```typescript
+InertiaModule.forRoot({
+  // ...other options
+  routes: true,
+})
+```
+
+### API
+
+```typescript
+const { route, current } = useRoute()
+```
+
+| Return value | Type | Description |
+| --- | --- | --- |
+| `route(name, params?)` | `(name: string, params?: Record<string, string>) => string` | Generate a URL from a named route with optional parameters |
+| `current(name?)` | `(name?: string) => boolean` | Check if the current page matches a route name. Returns `true` for the active route when called without arguments. |
+
+### Example
+
+```tsx
+import { useRoute } from '@stratal/inertia/react'
+
+export default function Navigation() {
+  const { route, current } = useRoute()
+
+  return (
+    <nav>
+      <a
+        href={route('posts.index')}
+        className={current('posts.index') ? 'active' : ''}
+      >
+        Posts
+      </a>
+      <a href={route('posts.show', { id: '123' })}>
+        View Post
+      </a>
+    </nav>
+  )
+}
+```
+
+### Type safety
+
+Route names and their parameters auto-complete in your editor when you generate types with the Quarry CLI:
+
+```bash
+npx quarry route:types
+```
+
+This scans your controllers and produces a type registry so that `route('posts.show', { id: '123' })` is fully type-checked — invalid route names or missing parameters surface as compile-time errors.
+
+## useI18n
+
+The `useI18n` hook exposes translation functions and the active locale to your React components.
+
+### Prerequisites
+
+Enable i18n in your module setup:
+
+```typescript
+InertiaModule.forRoot({
+  // ...other options
+  i18n: {
+    only: ['common', 'posts'],
+  },
+})
+```
+
+<Aside type="note">
+Only message namespaces listed in the `i18n.only` option are sent to the frontend. Omit the `only` option to send all messages.
+</Aside>
+
+### API
+
+```typescript
+const { t, locale } = useI18n()
+```
+
+| Return value | Type | Description |
+| --- | --- | --- |
+| `t(key, params?)` | `(key: string, params?: Record<string, string>) => string` | Translate a message key with optional interpolation parameters |
+| `locale` | `string` | The current locale string (e.g. `'en'`, `'fr'`) |
+
+### Example
+
+```tsx
+import { useI18n } from '@stratal/inertia/react'
+
+export default function Greeting() {
+  const { t, locale } = useI18n()
+
+  return (
+    <div>
+      <p>{t('common.welcome', { name: 'John' })}</p>
+      <span>Current locale: {locale}</span>
+    </div>
+  )
+}
+```
+
+Translation keys use dot notation where the first segment is the namespace and the rest is the path within that namespace's messages. For example, `common.welcome` resolves to the `welcome` key in the `common` namespace.

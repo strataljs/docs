@@ -1,0 +1,141 @@
+---
+title: Overview & Setup
+description: Get started with @stratal/inertia — an Inertia.js v3 server adapter for building server-driven React SPAs on Cloudflare Workers.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@stratal/inertia` is an Inertia.js v3 server-side adapter for Stratal. It lets you build server-driven single-page applications with React while keeping your routing, controllers, and data logic entirely on the server. There is no client-side router and no API layer to maintain — your Stratal controllers render React pages directly.
+
+## Installation
+
+Install the adapter along with the Inertia.js client libraries and React:
+
+```bash
+yarn add @stratal/inertia @inertiajs/react @inertiajs/core react react-dom
+```
+
+## Quick scaffolding
+
+The Quarry CLI can generate the recommended directory structure for you:
+
+```bash
+npx quarry inertia:install
+```
+
+This creates the client entry point, root HTML template, TypeScript declarations, and a sample page component so you can start building immediately.
+
+## Module setup
+
+Register `InertiaModule` in your application module using `forRoot()`:
+
+```typescript
+import { Module } from 'stratal/module'
+import { InertiaModule } from '@stratal/inertia'
+import rootView from './inertia/root.html'
+import manifest from '../dist/.vite/manifest.json'
+
+@Module({
+  imports: [
+    InertiaModule.forRoot({
+      rootView,
+      version: '1.0.0',
+      manifest,
+      entryClientPath: 'src/inertia/app.tsx',
+      flash: {
+        driver: 'kv',
+        binding: 'FLASH_KV',
+      },
+      routes: true,
+      sharedData: {
+        appName: 'My App',
+      },
+      i18n: {
+        lang: 'en',
+      },
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+## Configuration options
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `rootView` | `string` | Raw HTML template string containing placeholder tags |
+| `version` | `string` | App version string used for cache busting |
+| `ssr` | `InertiaSsrOptions` | SSR configuration for server-side rendering |
+| `flash` | `InertiaFlashOptions` | Flash message storage driver and binding |
+| `sharedData` | `Record<string, unknown>` | Global props shared with every page |
+| `i18n` | `InertiaI18nOptions` | Frontend translation injection settings |
+| `routes` | `boolean` | Inject serialized routes for client-side URL generation |
+| `manifest` | `ViteManifest` | Vite build manifest for production asset resolution (omit for dev mode) |
+| `entryClientPath` | `string` | Path to the client entry file (default: `'src/inertia/app.tsx'`) |
+
+<Aside type="tip">
+  Omit the `manifest` option during development. The adapter will inject Vite dev server scripts automatically.
+</Aside>
+
+## Async configuration
+
+When your Inertia configuration depends on other providers (for example, a config service), use `forRootAsync()`:
+
+```typescript
+import { Module } from 'stratal/module'
+import { InertiaModule } from '@stratal/inertia'
+import { ConfigService } from './config.service'
+
+@Module({
+  imports: [
+    InertiaModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        rootView: config.get('INERTIA_ROOT_VIEW'),
+        version: config.get('APP_VERSION'),
+        routes: true,
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+## Root HTML template
+
+The `rootView` option expects a raw HTML string with special placeholder tags. Create a file at `src/inertia/root.html`:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    @inertiaHead
+    @viteHead
+  </head>
+  <body>
+    @inertia
+    @viteScripts
+  </body>
+</html>
+```
+
+### Template placeholders
+
+| Placeholder | Description |
+| --- | --- |
+| `@inertia` | Replaced with the root `<div>` containing serialized page data |
+| `@inertiaHead` | Replaced with any `<Head>` tags set by the current page component |
+| `@viteHead` | Replaced with Vite CSS and preload links from the build manifest |
+| `@viteScripts` | Replaced with Vite JavaScript `<script>` tags |
+
+<Aside type="caution">
+  All four placeholders must be present in your template. Missing any of them will result in broken page rendering or missing assets.
+</Aside>
+
+## Next steps
+
+- [Pages & Rendering](/inertia/pages-and-rendering/) — Learn how to render Inertia pages from your controllers.
+- [Shared Data & Props](/inertia/shared-data-and-props/) — Share global data and use advanced prop loading strategies.
+- [Quarry CLI](/core-concepts/quarry-cli/) — Explore all available CLI commands including Inertia scaffolding.

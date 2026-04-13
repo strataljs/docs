@@ -1,0 +1,120 @@
+---
+title: CLI Commands
+description: Scaffold, develop, build, and generate types for your Inertia application using Quarry CLI commands.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The Quarry CLI provides commands for scaffolding, developing, building, and generating types for your Inertia application. All commands are registered automatically when `InertiaModule` is imported in your application module.
+
+## Commands overview
+
+| Command | Description |
+| --- | --- |
+| `inertia:install` | Scaffold the Inertia directory structure and starter files |
+| `inertia:dev` | Start the Vite development server with HMR |
+| `inertia:build` | Build client and SSR bundles for production |
+| `inertia:types` | Generate TypeScript types for page components |
+
+## inertia:install
+
+Scaffolds the Inertia directory structure and creates starter files so you can begin building immediately.
+
+```bash
+npx quarry inertia:install
+```
+
+This creates the following files:
+
+| File | Purpose |
+| --- | --- |
+| `src/inertia/app.tsx` | Client-side entry point |
+| `src/inertia/ssr.tsx` | Server-side rendering entry point |
+| `src/inertia/root.html` | Root HTML template |
+| `src/inertia/pages/Home.tsx` | Sample page component |
+
+### Flags
+
+| Flag | Description |
+| --- | --- |
+| `--skip-deps` | Skip installing npm dependencies. Use this if you want to manage dependencies yourself. |
+
+## inertia:dev
+
+Starts the Vite development server with hot module replacement enabled. This is the recommended way to develop Inertia applications.
+
+```bash
+npx quarry inertia:dev
+```
+
+<Aside type="tip">
+This command auto-configures Vite with the Stratal Inertia plugins. Use a custom `vite.config.ts` only when you need additional plugins.
+</Aside>
+
+### Flags
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--port` | `5173` | Port for the Vite development server |
+| `--host` | — | Expose the server to your local network |
+
+### Example
+
+```bash
+npx quarry inertia:dev --port=3000 --host
+```
+
+## inertia:build
+
+Builds the client bundle and optionally the SSR bundle for production deployment.
+
+```bash
+npx quarry inertia:build
+```
+
+### Flags
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--outDir` | `dist` | Output directory for the build |
+| `--ssr` | — | Also build the SSR bundle |
+
+### Example
+
+Build both client and SSR bundles:
+
+```bash
+npx quarry inertia:build --ssr
+```
+
+Build to a custom output directory:
+
+```bash
+npx quarry inertia:build --outDir=build
+```
+
+## inertia:types
+
+Generates TypeScript type definitions for your page components. It scans `src/inertia/pages/` for React components and produces types for the `InertiaPageRegistry`, enabling type-safe rendering from your controllers.
+
+```bash
+npx quarry inertia:types
+```
+
+### Flags
+
+| Flag | Description |
+| --- | --- |
+| `--watch` | Regenerate types automatically when page files change |
+
+### Example
+
+Run in watch mode during development:
+
+```bash
+npx quarry inertia:types --watch
+```
+
+<Aside type="note">
+When using `quarry inertia:dev`, types are regenerated automatically on HMR via the Vite plugin. The `inertia:types` command is useful for CI pipelines or when you are not running the dev server.
+</Aside>

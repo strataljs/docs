@@ -354,6 +354,101 @@ Cloudflare R2 is S3-compatible, so it works with the storage module's `s3` provi
   Store your R2 credentials as Cloudflare Worker secrets rather than hardcoding them. Access them through your `ConfigService` or environment bindings.
 </Aside>
 
+## Multipart uploads
+
+For fine-grained control over large file uploads, the S3 provider exposes a multipart upload API. This is useful when you need to upload files in parts from the client, resume interrupted uploads, or handle very large files that exceed single-request limits.
+
+### Starting a multipart upload
+
+```typescript
+import { STORAGE_TOKENS, type IS3MultipartProvider } from 'stratal/storage/providers'
+
+@Transient()
+export class UploadService {
+  constructor(
+    @inject(STORAGE_TOKENS.StorageService) private readonly storage: IS3MultipartProvider,
+  ) {}
+
+  async initiateUpload(filename: string) {
+    const { uploadId, key } = await this.storage.createMultipartUpload(
+      `uploads/${filename}`,
+      { contentType: 'application/octet-stream' },
+    )
+    return { uploadId, key }
+  }
+}
+```
+
+### Uploading parts
+
+Each part must be at least 5 MB (except the last part). Parts are identified by a sequential part number starting at 1:
+
+```typescript
+async uploadPart(key: string, uploadId: string, partNumber: number, data: Uint8Array) {
+  const { etag } = await this.storage.uploadPart(key, uploadId, partNumber, data)
+  return { etag, partNumber }
+}
+```
+
+### Completing the upload
+
+After all parts are uploaded, complete the multipart upload by passing the list of parts:
+
+```typescript
+async completeUpload(key: string, uploadId: string, parts: CompletedPart[]) {
+  const result = await this.storage.completeMultipartUpload(key, uploadId, parts)
+  return result // { location, key }
+}
+```
+
+### Aborting an upload
+
+If an upload needs to be cancelled, abort it to clean up any uploaded parts:
+
+```typescript
+await this.storage.abortMultipartUpload(key, uploadId)
+```
+
+### Listing parts and uploads
+
+```typescript
+// List uploaded parts for a specific upload
+const { parts, isTruncated } = await this.storage.listParts(key, uploadId)
+
+// List all in-progress multipart uploads
+const { uploads } = await this.storage.listMultipartUploads()
+```
+
+### Additional object operations
+
+The multipart provider also exposes `headObject` for metadata inspection and `deleteObjects` for batch deletion:
+
+```typescript
+// Get object metadata without downloading the file
+const metadata = await this.storage.headObject('uploads/report.pdf')
+// { size, contentType, metadata }
+
+// Delete multiple objects in a single request
+const result = await this.storage.deleteObjects([
+  'uploads/old-file-1.pdf',
+  'uploads/old-file-2.pdf',
+])
+// { deleted: 2, errors: [] }
+```
+
+### Multipart API reference
+
+| Method | Description |
+| --- | --- |
+| `createMultipartUpload(key, options?)` | Start a new multipart upload. Returns `{ uploadId, key }`. |
+| `uploadPart(key, uploadId, partNumber, body)` | Upload a single part. Returns `{ etag, partNumber }`. |
+| `completeMultipartUpload(key, uploadId, parts)` | Finalize the upload. Returns `{ location, key }`. |
+| `abortMultipartUpload(key, uploadId)` | Cancel and clean up an in-progress upload. |
+| `listParts(key, uploadId, marker?)` | List uploaded parts. Returns `{ parts, isTruncated, nextPartNumberMarker }`. |
+| `listMultipartUploads(keyMarker?, uploadIdMarker?)` | List all in-progress uploads. |
+| `headObject(key)` | Get object metadata. Returns `{ size, contentType, metadata }` or `null`. |
+| `deleteObjects(keys)` | Delete multiple objects. Returns `{ deleted, errors }`. |
+
 ## Best practices
 
 - **Use path templates.** Leverage `{year}`, `{month}`, and `{date}` in your `root` configuration to organize files automatically.

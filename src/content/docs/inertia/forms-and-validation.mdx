@@ -1,0 +1,184 @@
+---
+title: "Forms & Validation"
+description: "Handle form submissions, display validation errors, and use precognition for real-time form validation."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal integrates tightly with Inertia's form handling to give you automatic redirect handling, validation error flashing, and optional real-time validation via precognition. This page covers how to validate form submissions on the server, surface errors on the frontend, and enable live validation without a full form submit.
+
+## How form handling works
+
+Inertia converts certain redirects automatically to prevent browser form resubmission. When a `POST`, `PUT`, `PATCH`, or `DELETE` request returns a `302` redirect, Stratal converts it to a `303` redirect. This forces the browser to follow the redirect with a `GET` request, preventing the "confirm form resubmission" dialog that users would otherwise see when navigating back.
+
+## Validating form data with Zod
+
+Define a Zod schema and pass it to the route decorator. Stratal validates the request body before your handler runs:
+
+```typescript
+import { Controller, IController, RouterContext } from 'stratal/router'
+import { InertiaPost } from '@stratal/inertia'
+import { z } from 'stratal/validation'
+
+const createPostSchema = z.object({
+  title: z.string().min(1),
+  body: z.string().min(10),
+})
+
+@Controller('/posts')
+export class PostsController implements IController {
+  @InertiaPost('/', { body: createPostSchema })
+  async store(ctx: RouterContext) {
+    const data = await ctx.body<z.infer<typeof createPostSchema>>()
+    const post = await this.postService.create(data)
+
+    ctx.flash('success', 'Post created!')
+    return ctx.redirect(`/posts/${post.id}`)
+  }
+}
+```
+
+When the body passes validation, `ctx.body()` returns the parsed data and the handler executes normally.
+
+## Automatic error handling
+
+When validation fails, Stratal handles the error response automatically:
+
+### Schema validation errors
+
+If the request body does not match the Zod schema, a `SchemaValidationError` is thrown. Stratal catches it and:
+
+1. Redirects back to the previous page.
+2. Flashes validation errors as `{ field: 'message' }` under the `errors` key.
+
+For example, if the `title` field is empty, the flashed errors would look like:
+
+```json
+{
+  "errors": {
+    "title": "String must contain at least 1 character(s)"
+  }
+}
+```
+
+### Application errors
+
+When an `ApplicationError` is thrown (for example, a duplicate record or a business rule violation), Stratal flashes it under the `_form` key:
+
+```json
+{
+  "errors": {
+    "_form": "A post with this title already exists."
+  }
+}
+```
+
+This lets you distinguish between field-level and form-level errors on the frontend.
+
+## Displaying errors on the frontend
+
+Validation errors are available through Inertia's `usePage()` hook:
+
+```tsx
+import { usePage } from '@inertiajs/react'
+
+export default function CreatePost() {
+  const { errors } = usePage().props
+
+  return (
+    <form method="post" action="/posts">
+      <div>
+        <label htmlFor="title">Title</label>
+        <input id="title" name="title" type="text" />
+        {errors.title && <p className="error">{errors.title}</p>}
+      </div>
+
+      <div>
+        <label htmlFor="body">Body</label>
+        <textarea id="body" name="body" />
+        {errors.body && <p className="error">{errors.body}</p>}
+      </div>
+
+      {errors._form && <p className="error">{errors._form}</p>}
+
+      <button type="submit">Create Post</button>
+    </form>
+  )
+}
+```
+
+You can also use Inertia's `useForm()` helper for a more streamlined experience with automatic error tracking and form state management.
+
+## Precognition (real-time validation)
+
+Precognition lets you validate form data on the server without actually submitting the form. The client sends a lightweight request, the server validates the payload and responds immediately with either `204 No Content` (valid) or `422 Unprocessable Entity` (validation errors).
+
+### How it works
+
+1. The client sends a request with the `Precognition: true` header.
+2. The server runs validation against the defined schema.
+3. If valid, the server responds with `204`.
+4. If invalid, the server responds with `422` and the validation errors.
+5. The handler never executes -- only the validation runs.
+
+### Enabling precognition
+
+Precognition requires the `HandlePrecognitiveRequests` middleware. Register it on the routes that should support real-time validation:
+
+```typescript
+import { Module } from 'stratal/module'
+import { MiddlewareConfigurable, MiddlewareConsumer } from 'stratal/middleware'
+import { HandlePrecognitiveRequests } from '@stratal/inertia'
+import { PostsController } from './posts.controller'
+
+@Module({
+  controllers: [PostsController],
+  providers: [HandlePrecognitiveRequests],
+})
+export class PostsModule implements MiddlewareConfigurable {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(HandlePrecognitiveRequests)
+      .forRoutes('/posts')
+  }
+}
+```
+
+<Aside type="note">
+  Precognition is opt-in. Only routes with the `HandlePrecognitiveRequests` middleware will respond to precognition requests. All other routes ignore the `Precognition` header and process the request normally.
+</Aside>
+
+### Client-side usage
+
+On the frontend, send requests with the `Precognition: true` header to trigger server-side validation without submission:
+
+```tsx
+import { useState } from 'react'
+import { router } from '@inertiajs/react'
+
+export default function CreatePost() {
+  const [errors, setErrors] = useState({})
+  const [title, setTitle] = useState('')
+
+  function validateTitle() {
+    router.post('/posts', { title }, {
+      headers: { Precognition: 'true' },
+      onError: (errors) => setErrors(errors),
+      onSuccess: () => setErrors({}),
+    })
+  }
+
+  return (
+    <div>
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        onBlur={validateTitle}
+      />
+      {errors.title && <p className="error">{errors.title}</p>}
+    </div>
+  )
+}
+```
+
+This validates the `title` field on blur without navigating away from the page or submitting the form.

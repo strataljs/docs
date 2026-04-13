@@ -1,0 +1,88 @@
+---
+title: Vite Plugin
+description: Configure Vite for Inertia with automatic page type generation and development CSS handling.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+The `@stratal/inertia/vite` package provides a Vite plugin that handles TypeScript type generation for page components and CSS injection during SSR development.
+
+## Basic setup
+
+Add the `stratalInertia()` plugin to your Vite configuration:
+
+```typescript
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import { stratalInertia } from '@stratal/inertia/vite'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    stratalInertia(),
+  ],
+})
+```
+
+<Aside type="tip">
+When using `quarry inertia:dev`, a Vite config is auto-generated. You only need a custom `vite.config.ts` if you need additional Vite plugins or custom configuration.
+</Aside>
+
+## What it includes
+
+The `stratalInertia()` plugin bundles two sub-plugins:
+
+| Sub-plugin | Purpose |
+| --- | --- |
+| `stratalInertiaTypes` | Automatically regenerates TypeScript types for your page components whenever a file changes during HMR. This keeps the `InertiaPageRegistry` type in sync with your pages directory. |
+| `stratalInertiaDevCss` | Handles CSS injection during development when using server-side rendering. Ensures styles are applied correctly before hydration. |
+
+Both sub-plugins are included by default and require no separate configuration.
+
+## Plugin options
+
+You can customize the plugin by passing an options object:
+
+```typescript
+stratalInertia({
+  entries: ['src/inertia/app.tsx'],  // Client entry paths (default)
+})
+```
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `entries` | `string[]` | `['src/inertia/app.tsx']` | Paths to the client entry files. Adjust this if your entry point is in a different location. |
+
+## Using with quarry inertia:dev
+
+The recommended way to develop Inertia applications is with the Quarry CLI:
+
+```bash
+npx quarry inertia:dev
+```
+
+This command starts the Vite development server with the Stratal Inertia plugins pre-configured. HMR, type generation, and CSS handling all work out of the box without a `vite.config.ts` file.
+
+## Manual Vite config for advanced setups
+
+If you need additional Vite plugins or custom configuration beyond what `quarry inertia:dev` provides, create a `vite.config.ts` in your project root:
+
+```typescript
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import { stratalInertia } from '@stratal/inertia/vite'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+    stratalInertia(),
+  ],
+  build: {
+    outDir: 'dist',
+  },
+})
+```
+
+When a `vite.config.ts` is present, both `quarry inertia:dev` and `quarry inertia:build` will use it instead of the auto-generated configuration.
