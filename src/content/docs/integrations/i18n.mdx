@@ -175,7 +175,7 @@ import { ApplicationError, ERROR_CODES } from 'stratal/errors'
 
 export class UserNotFoundError extends ApplicationError {
   constructor(userId: string) {
-    super('errors.auth.userNotFound', ERROR_CODES.USERS.NOT_FOUND, { userId })
+    super('users.errors.notFound', ERROR_CODES.USERS.NOT_FOUND, { userId })
   }
 }
 ```
@@ -258,18 +258,26 @@ To override any system message, define the same key in your application messages
 
 ## Type-safe message keys
 
-The module uses TypeScript module augmentation to provide autocomplete for message keys. The `AppMessages` interface in `stratal` is empty by default — augment it with the shape of your app's messages for a single locale:
+The module uses TypeScript module augmentation to provide autocomplete for message keys. Each module or feature owns one distinct top-level namespace on the `AppMessageNamespaces` registry:
 
 ```typescript
-import type * as appEn from './messages/en'
+// src/modules/users/i18n/en.ts
+export const userMessages = {
+  en: {
+    welcome: 'Welcome, {name}!',
+    errors: { notFound: 'User {userId} not found' },
+  },
+} as const
 
-declare module 'stratal' {
-  interface AppMessages extends typeof appEn {}
+declare module 'stratal/i18n' {
+  interface AppMessageNamespaces {
+    users: typeof userMessages['en']
+  }
 }
 ```
 
 <Aside type="note">
-  `AppMessages` should extend `typeof yourLocaleMessages` (the shape of a single locale's message object), not the `Messages` type exported from `stratal/i18n`. The `Messages` type represents the full `{ en: { ... } }` object containing all locales.
+  Each module must own exactly **one** key on `AppMessageNamespaces`. Two modules augmenting the same key with different shapes will fail with TypeScript error **TS2717** ("Subsequent property declarations must have the same type"), because interface merging requires same-named properties across declarations to be structurally identical. This is the guardrail that keeps namespace ownership unambiguous — pick a distinct top-level key for every module (`users`, `billing`, `tenancy`, …) and nest your errors/validation/etc. underneath it.
 </Aside>
 
 This gives you autocomplete and compile-time checks for both system and app message keys:
@@ -277,6 +285,7 @@ This gives you autocomplete and compile-time checks for both system and app mess
 ```typescript
 this.i18n.t('errors.routeNotFound', { method: 'GET', path: '/api' }) // system key
 this.i18n.t('users.welcome', { name: 'Alice' })                      // app key
+this.i18n.t('users.errors.notFound', { userId: 'u_123' })            // app key
 ```
 
 ## DI tokens

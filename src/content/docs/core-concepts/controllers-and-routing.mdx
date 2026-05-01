@@ -421,6 +421,13 @@ export class UsersController implements IController {
 }
 ```
 
+Pass `{ absolute: true }` to generate a full URL (scheme + host) using the current request's origin:
+
+```typescript
+const url = ctx.route('users.show', { id: '42' }, { absolute: true })
+// → 'https://example.com/users/42'
+```
+
 For type-safe route names, generate types with the CLI:
 
 ```bash
@@ -429,9 +436,54 @@ npx quarry route:types
 
 This creates a `src/stratal.d.ts` file that provides autocomplete for route names and validates parameters.
 
+#### Outside a request context
+
+Use the standalone `route()` function or inject the `Uri` service when you need URL generation from a queue consumer, cron job, or service that doesn't receive a `RouterContext`:
+
+```typescript
+import { route } from 'stratal/router'
+
+const url = route('users.show', { id: '42' })
+```
+
+The `Uri` service exposes the same primitives plus request-aware helpers like `current()`, `full()`, `previous()`, `to()`, `query()`, and sticky parameter `defaults()` — useful when you want to share a default like `locale` across many `route()` calls in a single request. Resolve it from the request container:
+
+```typescript
+import { ROUTER_TOKENS, type Uri } from 'stratal/router'
+
+const uri = ctx.getContainer().resolve<Uri>(ROUTER_TOKENS.Uri)
+uri.defaults({ locale: 'en' })
+uri.route('posts.index') // auto-fills :locale param
+```
+
 <Aside type="tip">
   You can also generate [signed URLs](/guides/signed-urls/) with `ctx.signedUrl()` for tamper-proof, expiring links.
 </Aside>
+
+## Trailing slashes
+
+By default Stratal accepts both `/users` and `/users/` for the same route. To enforce a canonical form, pass a `trailingSlash` option to the `Stratal` constructor:
+
+```typescript
+import 'reflect-metadata'
+import { Stratal } from 'stratal'
+import { AppModule } from './app.module'
+
+export default new Stratal({
+  module: AppModule,
+  trailingSlash: 'always', // or 'never' | 'ignore'
+})
+```
+
+| Mode | Behaviour |
+| --- | --- |
+| `'ignore'` (default) | Both `/users` and `/users/` match. URL generation leaves paths as-is. |
+| `'always'` | Requests without a trailing slash redirect (308) to the trailing-slash form. URL generation appends `/`. |
+| `'never'` | Requests with a trailing slash redirect (308) to the non-trailing form. URL generation strips `/`. |
+
+The redirect uses HTTP 308 so request bodies survive on `POST`, `PUT`, and `PATCH`. Paths whose final segment contains a dot (e.g. `/openapi.json`) and the root `/` are always passed through unchanged.
+
+`ctx.route()`, the standalone `route()` function, and the `Uri` service all apply the configured mode automatically, so generated URLs stay consistent with the redirect behaviour.
 
 ## Next steps
 

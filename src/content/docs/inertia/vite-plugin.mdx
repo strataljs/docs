@@ -25,7 +25,7 @@ export default defineConfig({
 ```
 
 <Aside type="tip">
-When using `quarry inertia:dev`, a Vite config is auto-generated. You only need a custom `vite.config.ts` if you need additional Vite plugins or custom configuration.
+When using `npx inertia dev`, a Vite config is auto-generated. You only need a custom `vite.config.ts` if you need additional Vite plugins or custom configuration.
 </Aside>
 
 ## What it includes
@@ -53,19 +53,19 @@ stratalInertia({
 | --- | --- | --- | --- |
 | `entries` | `string[]` | `['src/inertia/app.tsx']` | Paths to the client entry files. Adjust this if your entry point is in a different location. |
 
-## Using with quarry inertia:dev
+## Using with `npx inertia dev`
 
-The recommended way to develop Inertia applications is with the Quarry CLI:
+The recommended way to develop Inertia applications is with the `@stratal/inertia` CLI:
 
 ```bash
-npx quarry inertia:dev
+npx inertia dev
 ```
 
 This command starts the Vite development server with the Stratal Inertia plugins pre-configured. HMR, type generation, and CSS handling all work out of the box without a `vite.config.ts` file.
 
 ## Manual Vite config for advanced setups
 
-If you need additional Vite plugins or custom configuration beyond what `quarry inertia:dev` provides, create a `vite.config.ts` in your project root:
+If you need additional Vite plugins or custom configuration beyond what `npx inertia dev` provides, create a `vite.config.ts` in your project root:
 
 ```typescript
 import { defineConfig } from 'vite'
@@ -85,4 +85,4 @@ export default defineConfig({
 })
 ```
 
-When a `vite.config.ts` is present, both `quarry inertia:dev` and `quarry inertia:build` will use it instead of the auto-generated configuration.
+When a `vite.config.ts` is present, both `npx inertia dev` and `npx inertia build` will use it instead of the auto-generated configuration.

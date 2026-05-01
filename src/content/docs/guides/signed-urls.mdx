@@ -61,9 +61,20 @@ async show(ctx: RouterContext) {
 
 The method returns `false` if the signature is missing, does not match, or the link has expired.
 
-## Standalone functions
+## Outside a route handler
 
-If you need to sign or verify URLs outside of a route handler -- for example in a queue consumer or scheduled task -- use the standalone helpers.
+When you have a request available (for example, inside a service called from a controller), inject the `Uri` service and use its named-route helpers — they accept the same `expiresIn` shape as `ctx.signedUrl()`.
+
+```typescript
+import { ROUTER_TOKENS, type Uri } from 'stratal/router'
+
+const uri = ctx.getContainer().resolve<Uri>(ROUTER_TOKENS.Uri)
+
+// Equivalent to ctx.signedUrl('files.download', { id: '123' }, { expiresIn: 3600 })
+const url = await uri.temporarySignedRoute('files.download', 3600, { id: '123' })
+```
+
+For pure helpers that only need a URL string and the signing secret -- in a queue consumer or scheduled task where there is no request -- use the lower-level functions:
 
 ```typescript
 import { signUrl, verifySignedUrl } from 'stratal/router'

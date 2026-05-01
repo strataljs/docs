@@ -79,8 +79,8 @@ export class ProfileService {
   ) {}
 
   async getProfile() {
-    const userId = this.auth.requireUserId()
-    return this.usersRepository.findById(userId)
+    const user = this.auth.requireUser()
+    return this.usersRepository.findById(user.id)
   }
 }
 ```
@@ -90,10 +90,30 @@ export class ProfileService {
 | Method | Return type | Description |
 | --- | --- | --- |
 | `isAuthenticated()` | `boolean` | Whether the current request has a valid session |
+| `getUser()` | `AuthUser \| undefined` | The authenticated user, or `undefined` |
+| `requireUser()` | `AuthUser` | The authenticated user. Throws `UserNotAuthenticatedError` if not authenticated |
 | `getUserId()` | `string \| undefined` | The authenticated user's ID, or `undefined` |
 | `requireUserId()` | `string` | The authenticated user's ID. Throws if not authenticated |
-| `getAuthContext()` | `AuthInfo` | The full authentication context object |
+| `getRole()` | `string \| undefined` | Raw role string from `user.role` (comma-separated for multiple roles) |
+| `getRoles()` | `string[]` | Roles parsed into an array. Returns `[]` when the user has no role |
+| `getAuthInfo()` | `AuthInfo` | The full authentication context object. Throws `ContextNotInitializedError` if not initialised |
 | `clearAuthContext()` | `void` | Clears the authentication state |
+
+### Augmenting AuthUser
+
+`AuthUser` extends Better Auth's base user with `name` made optional. Augment it via TypeScript module declaration to match whatever `additionalFields` or plugins your Better Auth config returns:
+
+```typescript
+declare module '@stratal/framework/context' {
+  interface AuthUser {
+    firstName: string
+    lastName: string
+    role: string
+  }
+}
+```
+
+Once augmented, `auth.requireUser()` and `auth.getUser()` return the typed shape, and `auth.getRole()` is typed as `string`.
 
 <Aside type="note">
   `AuthContext` is request-scoped, meaning each HTTP request gets its own instance. The auth state is populated automatically by the `AuthModule`'s middleware pipeline before your controller methods run.
@@ -133,5 +153,5 @@ These middleware run before your controller methods, so `AuthContext` is always 
 ## Next steps
 
 - [Auth Guard](/framework/auth-guard/) for protecting routes with authentication checks.
-- [RBAC](/framework/rbac/) for role-based access control on top of auth.
+- [Access Control](/framework/access-control/) for role-based permissions on top of auth.
 - [Database](/framework/database/) for configuring the database used by Better Auth.

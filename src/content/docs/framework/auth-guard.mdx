@@ -5,7 +5,7 @@ description: Protect routes with authentication and permission checks using the 
 
 import { Aside } from '@astrojs/starlight/components';
 
-The `AuthGuard` factory from `@stratal/framework/guards` creates guards that check authentication and optionally verify permissions. It integrates with `AuthContext` and `CasbinService` to provide both authentication-only and scope-based authorization.
+The `AuthGuard` factory from `@stratal/framework/guards` creates guards that check authentication and, optionally, permission. It works with `AuthContext` for authentication and with `AccessService` for permission checks — both supplied automatically when their respective modules are configured.
 
 ## Authentication only
 
@@ -27,47 +27,49 @@ export class ProfileController implements IController {
 }
 ```
 
-When no scopes are provided, `AuthGuard` checks `AuthContext.isAuthenticated()`. If the user is not authenticated, it throws a `UserNotAuthenticatedError` (HTTP 401).
+When no permissions are provided, `AuthGuard` checks `AuthContext.isAuthenticated()`. If the user is not authenticated, it throws a `UserNotAuthenticatedError` (HTTP 401).
 
-## With permission scopes
+## With permission checks
 
-Pass a `scopes` array to check specific permissions via `CasbinService`:
+Pass a `permissions` option to enforce access-control checks alongside authentication. Each entry is a `'resource:action'` string:
 
 ```typescript
 @Controller('/api/admin/users')
-@UseGuards(AuthGuard({ scopes: ['users:write'] }))
+@UseGuards(AuthGuard({ permissions: 'users:ban' }))
 export class AdminUsersController implements IController {
   @Route({ response: usersSchema })
   index(ctx: RouterContext) {
-    // only users with 'users:write' permission reach this handler
+    // only authenticated users with 'users:ban' permission reach this handler
     return ctx.json({ users: [] })
   }
 }
 ```
 
-With scopes, `AuthGuard` first checks authentication (401 if not authenticated), then checks if the user has the required permission (403 if unauthorized).
+`permissions` accepts a single string or an array. When you pass an array, every listed permission must be granted:
+
+```typescript
+@UseGuards(AuthGuard({ permissions: ['posts:delete', 'admin:access'] }))
+```
+
+A bare resource without an action (e.g. `'admin'`) is treated as a wildcard — the user passes if they have any action defined for that resource.
+
+`AuthGuard` first verifies authentication (401 if not authenticated), then checks permissions through `AccessService` (403 if unauthorized). The permission check reads roles from `AuthContext`, so it doesn't trigger an extra database query.
 
 ## Per-route guards
 
-You can apply `AuthGuard` at the route level instead of the controller level:
+Apply `AuthGuard` at the route level instead of the controller level when only some routes need authorization:
 
 ```typescript
 @Controller('/api/students')
 export class StudentsController implements IController {
   @Route({ response: studentsSchema })
-  @UseGuards(AuthGuard({ scopes: ['students:read'] }))
+  @UseGuards(AuthGuard({ permissions: 'students:read' }))
   index(ctx: RouterContext) {
     // requires students:read permission
   }
 
-  @Route({ response: studentSchema })
-  @UseGuards(AuthGuard({ scopes: ['students:read'] }))
-  show(ctx: RouterContext) {
-    // requires students:read permission
-  }
-
   @Route({ body: createStudentSchema, response: studentSchema })
-  @UseGuards(AuthGuard({ scopes: ['students:write'] }))
+  @UseGuards(AuthGuard({ permissions: 'students:write' }))
   create(ctx: RouterContext) {
     // requires students:write permission
   }
@@ -79,16 +81,17 @@ export class StudentsController implements IController {
 | Error | HTTP Status | When |
 | --- | --- | --- |
 | `UserNotAuthenticatedError` | 401 | User is not authenticated |
-| `InsufficientPermissionsError` | 403 | User is authenticated but lacks required permissions |
+| `InsufficientPermissionsError` | 403 | User is authenticated but lacks the required permissions |
 
-Both errors are handled by Stratal's global error handler and produce appropriate JSON error responses.
+Both errors are handled by Stratal's global error handler and produce JSON error responses with localised messages.
 
 ## Prerequisites
 
-For authentication-only checks (no scopes), only [AuthModule](/framework/auth/) is required. When using scopes for permission checks, both [AuthModule](/framework/auth/) and [RbacModule](/framework/rbac/) must be configured.
+- [AuthModule](/framework/auth/) must be configured for any use of `AuthGuard`.
+- For permission checks, pass an `accessControl` option to `AuthModule.forRootAsync()` so that `AccessService` is registered. See [Access Control](/framework/access-control/).
 
 ## Next steps
 
 - [Auth](/framework/auth/) for configuring authentication.
-- [RBAC](/framework/rbac/) for configuring roles and permissions.
-- [Guards](/guides/guards/) for the core guard system and custom guards.
+- [Access Control](/framework/access-control/) for declaring resources and roles.
+- [Guards](/guides/guards/) for the core guard system and writing custom guards.

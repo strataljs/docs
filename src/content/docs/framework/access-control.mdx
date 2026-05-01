@@ -1,0 +1,199 @@
+---
+title: Access Control
+description: Role-based permissions for authenticated users — define resources and roles in one place, then enforce them with guards or service-level checks.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@stratal/framework` ships an opt-in role-based access control system built on top of [Better Auth](https://www.better-auth.com/)'s admin plugin. You declare your resources and roles once with `createAccessControl()`, wire the result into `AuthModule`, and check permissions either through the `AuthGuard` or by injecting `AccessService` into your providers.
+
+## Defining roles and permissions
+
+Use `createAccessControl()` to declare every resource your app cares about and the actions each role can perform on it. Mark `resources` as `as const` so role permissions are type-checked against the declared action lists.
+
+```typescript
+// src/permissions.ts
+import { createAccessControl } from '@stratal/framework/access-control'
+
+export const permissions = createAccessControl({
+  resources: {
+    posts: ['create', 'read', 'update', 'delete'],
+    users: ['list', 'ban'],
+    admin: ['access'],
+  } as const,
+  roles: {
+    admin: {
+      posts: ['create', 'read', 'update', 'delete'],
+      users: ['list', 'ban'],
+      admin: ['access'],
+    },
+    editor: {
+      posts: ['create', 'read', 'update'],
+    },
+    user: {
+      posts: ['read'],
+    },
+  },
+})
+```
+
+The return value is `{ ac, roles }` — a Better Auth access-control descriptor that you can spread into both Stratal's `AuthModule` and Better Auth's `admin` plugin.
+
+## Wiring it into AuthModule
+
+Pass the descriptor as the `accessControl` option to `AuthModule.forRootAsync()`. Spread the same value into the Better Auth `admin` plugin so server-side admin endpoints share the same role definitions.
+
+```typescript
+import { Module } from 'stratal/module'
+import { DI_TOKENS } from 'stratal/di'
+import { AuthModule } from '@stratal/framework/auth'
+import { admin } from 'better-auth/plugins'
+import { permissions } from './permissions'
+
+@Module({
+  imports: [
+    AuthModule.forRootAsync({
+      inject: [DI_TOKENS.Database],
+      useFactory: (db) => ({
+        database: db,
+        plugins: [admin({ ...permissions })],
+      }),
+      accessControl: permissions,
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+When `accessControl` is provided, `AuthModule` registers `AccessService` and adds the Stratal access-control plugin to Better Auth automatically.
+
+## Composing roles
+
+There is no implicit role hierarchy. To build a role on top of another, use `extendRole()` — it returns a new role with permissions from the parent merged with any additional permissions you specify.
+
+```typescript
+import { extendRole } from '@stratal/framework/access-control'
+import { permissions } from './permissions'
+
+const superAdminRole = extendRole(permissions.ac, permissions.roles.admin, {
+  users: ['list', 'ban', 'delete'] as const,
+})
+
+const finalPermissions = {
+  ...permissions,
+  roles: { ...permissions.roles, super_admin: superAdminRole },
+}
+```
+
+Pass `finalPermissions` to `AuthModule` instead of `permissions`. Overlapping resource keys are unioned — `extendRole` never overwrites a parent's actions.
+
+## Checking permissions in routes
+
+The simplest way to enforce a permission is to apply `AuthGuard` with a `permissions` option. Each entry is a `'resource:action'` string; arrays require the user to have *all* listed permissions.
+
+```typescript
+import { Controller, Route, type RouterContext, UseGuards } from 'stratal/router'
+import { AuthGuard } from '@stratal/framework/guards'
+
+@Controller('/posts')
+export class PostsController {
+  @Route({ name: 'posts.update' })
+  @UseGuards(AuthGuard({ permissions: 'posts:update' }))
+  update(ctx: RouterContext) {
+    return ctx.json({ ok: true })
+  }
+
+  @Route({ name: 'posts.destroy' })
+  @UseGuards(AuthGuard({ permissions: ['posts:delete', 'admin:access'] }))
+  destroy(ctx: RouterContext) {
+    return ctx.json({ ok: true })
+  }
+}
+```
+
+Apply the guard at the controller level when every route in a controller needs the same permission:
+
+```typescript
+@Controller('/admin')
+@UseGuards(AuthGuard({ permissions: 'admin:access' }))
+export class AdminController {
+  // ...
+}
+```
+
+See [Auth Guard](/framework/auth-guard/) for the full guard reference.
+
+## AccessService
+
+For checks inside a service or to assign roles programmatically, inject `AccessService` from the access-control package. It is request-scoped, so `currentUser*` methods read from the in-memory `AuthContext` and avoid extra database round-trips.
+
+```typescript
+import { Transient, inject } from 'stratal/di'
+import { AC_TOKENS, type AccessService } from '@stratal/framework/access-control'
+
+@Transient()
+export class PostPolicy {
+  constructor(
+    @inject(AC_TOKENS.AccessService) private readonly access: AccessService,
+  ) {}
+
+  canUpdate(): boolean {
+    return this.access.currentUserHasPermission({ posts: ['update'] })
+  }
+
+  async grantEditor(userId: string) {
+    await this.access.setUserRole(userId, ['editor'])
+  }
+}
+```
+
+### API
+
+| Method | Returns | Description |
+| --- | --- | --- |
+| `getCurrentUserRoles()` | `string[]` | Roles for the current request's user. Reads from `AuthContext`. |
+| `getCurrentUserPermissions()` | `Record<string, string[]>` | Merged permission map across the current user's roles. |
+| `currentUserHasPermission(perms)` | `boolean` | Synchronous permission check for the current user. |
+| `getUserRoles(userId)` | `Promise<string[]>` | Roles for any user. Falls back to the database when the user isn't the current request's user. |
+| `getPermissionsForUser(userId)` | `Promise<Record<string, string[]>>` | Merged permission map for a given user. |
+| `hasPermission(userId, perms)` | `Promise<boolean>` | Permission check for an arbitrary user. |
+| `setUserRole(userId, role)` | `Promise<void>` | Assign one role (`'admin'`) or many (`['editor', 'reviewer']`). Stored as a comma-separated string in `user.role`. |
+
+### Permission shape
+
+Permission objects map a resource name to the actions you require on that resource:
+
+```typescript
+{ posts: ['update', 'delete'] }
+```
+
+Use `'*'` to require *any* action on a resource — useful when you only care that the user has some level of access:
+
+```typescript
+access.currentUserHasPermission({ posts: ['*'] })
+```
+
+A user is granted access if **any** of their roles satisfies the requested permissions (OR across roles, AND across resources within a single role).
+
+## Multiple roles per user
+
+`setUserRole` accepts a single role or an array. Multiple roles are stored as a comma-separated string in the `user.role` column and evaluated independently — the user is granted access if any role permits the action.
+
+```typescript
+await access.setUserRole(userId, ['editor', 'reviewer'])
+// stored as 'editor,reviewer'
+```
+
+## Errors
+
+| Error class | HTTP status | When |
+| --- | --- | --- |
+| `InsufficientPermissionsError` | 403 | Authenticated user lacks the required permissions |
+
+Stratal's global error handler maps `InsufficientPermissionsError` to a localised JSON response. You can catch it explicitly when handling permission checks inside services.
+
+## Next steps
+
+- [Auth Guard](/framework/auth-guard/) for the guard-based enforcement reference.
+- [Auth](/framework/auth/) for configuring the underlying authentication layer.
+- [Guards](/guides/guards/) for writing your own guards.
