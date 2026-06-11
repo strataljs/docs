@@ -1,6 +1,6 @@
 ---
 title: Service Bindings
-description: Expose RPC methods via Cloudflare Service Bindings using StratalWorkerEntrypoint — share DI services across workers with type-safe remote calls.
+description: Expose RPC methods via Cloudflare Service Bindings using StratalWorkerEntrypoint - share DI services across workers with type-safe remote calls.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -97,7 +97,7 @@ When you call `this.runInScope(callback)`, Stratal:
 Each RPC call gets its own isolated scope, just like an HTTP request would.
 
 <Aside type="tip">
-  Keep your entrypoint methods thin — resolve a service and delegate to it. This keeps your RPC layer clean and your business logic testable.
+  Keep your entrypoint methods thin - resolve a service and delegate to it. This keeps your RPC layer clean and your business logic testable.
 </Aside>
 
 ## Calling from a controller

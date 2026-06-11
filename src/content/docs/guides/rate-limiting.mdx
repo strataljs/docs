@@ -1,0 +1,324 @@
+---
+title: Rate Limiting
+description: Define named rate limiters with pluggable storage, attach them to routes via router.throttle() or the @RateLimit decorator, and return 429 responses with standard rate-limit headers.
+---
+
+import { Aside, Tabs, TabItem, LinkCard } from '@astrojs/starlight/components';
+
+Stratal ships a named rate limiter with pluggable storage. You define limiters once at boot, give each one a name, and attach those names to routes through `router.throttle('name')` or the `@RateLimit('name')` decorator. When a limit is exceeded, the limiter returns `429 Too Many Requests` with `Retry-After` and `X-RateLimit-*` headers, and a content-negotiated body (JSON, HTML, or Inertia).
+
+The `RateLimiterModule` is opt-in. Nothing rate limits until you import it with `forRoot({ store })`. There is no implicit default store.
+
+<Aside type="note">
+  The limiter follows Laravel's `RateLimiter::for` model: limiters are named definitions registered centrally, then referenced by name at the call site. This keeps the limit policy in one place and the route declarations clean.
+</Aside>
+
+## Configure the store
+
+Import `RateLimiterModule.forRoot({ store })` in your `AppModule`. The `store` field selects the backing storage.
+
+<Tabs>
+  <TabItem label="KV">
+    ```typescript
+    import { Module } from 'stratal/module'
+    import { RateLimiterModule } from 'stratal/rate-limiter'
+
+    @Module({
+      imports: [
+        RateLimiterModule.forRoot({ store: 'kv', binding: 'RATE_LIMITS' }),
+      ],
+    })
+    export class AppModule {}
+    ```
+
+    For `store: 'kv'`, `binding` names a `KVNamespace` on your `StratalEnv`. Declare it in `wrangler.jsonc`:
+
+    ```jsonc
+    {
+      "kv_namespaces": [
+        { "binding": "RATE_LIMITS", "id": "<your-namespace-id>" }
+      ]
+    }
+    ```
+  </TabItem>
+  <TabItem label="Memory">
+    ```typescript
+    import { Module } from 'stratal/module'
+    import { RateLimiterModule } from 'stratal/rate-limiter'
+
+    @Module({
+      imports: [
+        RateLimiterModule.forRoot({ store: 'memory' }),
+      ],
+    })
+    export class AppModule {}
+    ```
+
+    The `'memory'` store keeps counters in a process-local `Map`. It is suitable for tests or a single isolate only, since each isolate keeps its own independent counters.
+  </TabItem>
+  <TabItem label="Custom">
+    ```typescript
+    import { Module } from 'stratal/module'
+    import { RateLimiterModule } from 'stratal/rate-limiter'
+    import { DurableObjectRateLimiterStore } from './do-rate-limiter-store'
+
+    @Module({
+      imports: [
+        RateLimiterModule.forRoot({
+          store: { useClass: DurableObjectRateLimiterStore },
+        }),
+      ],
+    })
+    export class AppModule {}
+    ```
+
+    A custom class implementing `IRateLimiterStore` is resolved from the DI container, so it can `@inject` its own dependencies (such as a Durable Object namespace from `StratalEnv`). See [Custom stores](#custom-stores) below.
+  </TabItem>
+</Tabs>
+
+The three store shapes accepted by `forRoot` are:
+
+| Option | Storage |
+|--------|---------|
+| `{ store: 'kv', binding }` | Cloudflare KV. `binding` is a `keyof StratalEnv` naming the `KVNamespace`. |
+| `{ store: 'memory' }` | In-process `Map`. Tests or single-isolate only. |
+| `{ store: { useClass } }` | Any class implementing `IRateLimiterStore`, resolved from DI. |
+
+### Async configuration
+
+When store options depend on another service, use `forRootAsync` with `inject` and `useFactory`:
+
+```typescript
+import { RateLimiterModule } from 'stratal/rate-limiter'
+import { CONFIG_TOKENS, type IConfigService } from 'stratal/config'
+import type { StratalEnv } from 'stratal'
+
+RateLimiterModule.forRootAsync({
+  inject: [CONFIG_TOKENS.ConfigService],
+  useFactory: (config: IConfigService) => ({
+    store: 'kv' as const,
+    binding: config.get('rateLimit').binding as keyof StratalEnv,
+  }),
+})
+```
+
+<Aside type="caution">
+  If you import `RateLimiterModule` but never call `forRoot()` (or `forRootAsync()`), the store cannot be resolved and `app.initialize()` throws. The store is validated eagerly at boot, so misconfiguration fails fast rather than on the first throttled request.
+</Aside>
+
+## Define named limiters
+
+Limiters are registered against the `RateLimiterRegistry`. Resolve it from the container inside any module's `onInitialize` hook and call `for(name, resolver)`. The resolver receives the request context and returns the `Limit` (or array of limits) that apply to that request.
+
+<Aside type="note">
+  Constructor `@inject` does not work on module classes. Resolve the registry from the `container` passed to the `onInitialize({ container })` hook instead.
+</Aside>
+
+```typescript
+import { Module } from 'stratal/module'
+import type { ModuleContext, OnInitialize } from 'stratal/module'
+import { Limit, RATE_LIMITER_TOKENS, type RateLimiterRegistry } from 'stratal/rate-limiter'
+
+@Module({})
+export class RateLimitsModule implements OnInitialize {
+  onInitialize({ container }: ModuleContext): void {
+    const limiter = container.resolve<RateLimiterRegistry>(RATE_LIMITER_TOKENS.Registry)
+
+    // 60 requests per minute, scoped per client IP
+    limiter.for('api', (ctx) =>
+      Limit.perMinute(60).by(ctx.header('cf-connecting-ip') ?? 'global'),
+    )
+
+    // 100 uploads per hour, scoped per authenticated user
+    limiter.for('uploads', (ctx) => {
+      const auth = ctx.getContainer().resolve<AuthContext>(DI_TOKENS.AuthContext)
+      return Limit.perHour(100).by(auth.userId)
+    })
+
+    // Multiple windows under one name: both must pass
+    limiter.for('ai', (ctx) => [
+      Limit.perMinute(10).by(ctx.userId),
+      Limit.perDay(1000).by(ctx.userId),
+    ])
+
+    // Conditional bypass: trusted internal callers skip the limit
+    limiter.for('internal', (ctx) =>
+      ctx.header('x-internal-token') ? Limit.none() : Limit.perMinute(30).by(ctx.ip),
+    )
+
+    // Custom 429 body
+    limiter.for('login', (ctx) =>
+      Limit.perMinute(5)
+        .by(ctx.header('cf-connecting-ip') ?? 'global')
+        .response((ctx, headers) =>
+          ctx.json({ error: 'Slow down' }, 429, headers),
+        ),
+    )
+  }
+}
+```
+
+Add `RateLimitsModule` to your `AppModule`'s `imports`. Calling `for(name, ...)` twice with the same name overwrites the previous resolver: the last definition wins.
+
+### Limit factories
+
+Build a `Limit` with one of the static factories on the `Limit` class:
+
+```typescript
+import { Limit } from 'stratal/rate-limiter'
+
+Limit.perSecond(10)          // 10 requests per 1 second
+Limit.perSeconds(10, 3)      // 3 requests per 10 seconds
+Limit.perMinute(60)          // 60 requests per 60 seconds
+Limit.perMinutes(15, 200)    // 200 requests per 15 minutes
+Limit.perHour(1000)          // 1000 requests per hour
+Limit.perDay(10_000)         // 10000 requests per day
+Limit.none()                 // bypass the limiter for this request
+```
+
+`perSeconds` and `perMinutes` take the window first, then the maximum count.
+
+### Chainable methods
+
+| Method | Effect |
+|--------|--------|
+| `.by(key)` | Scope the counter to an actor (user id, IP, tenant). Accepts a string or number. Without it, the limiter uses a single global counter. |
+| `.response(handler)` | Override the default `429` response. The handler receives `(ctx, headers)`. Spread `headers` onto your response to keep the standard `Retry-After` and `X-RateLimit-*` headers. |
+
+## Attach limiters to routes
+
+There are two ways to attach a named limiter to routes. Pick whichever fits the call site. Both can stack on the same route.
+
+### Router scope
+
+Inside a module that implements `RouteConfigurable`, call `.throttle('name')` on the router or a group:
+
+```typescript
+import type { RouteConfigurable } from 'stratal/router'
+import { Router } from 'stratal/router'
+
+@Module({ controllers: [UploadsController] })
+export class UploadsModule implements RouteConfigurable {
+  configureRoutes(router: Router): void {
+    router
+      .prefix('/uploads')
+      .middleware(AuthMiddleware)
+      .throttle('uploads')
+  }
+}
+
+// or inside group()
+router.group([AdminController], (admin) => {
+  admin.throttle('admin').middleware(AdminGuard)
+})
+```
+
+### The @RateLimit decorator
+
+`@RateLimit('name')` attaches a limiter to a controller class or a single route method. Class-level limits apply to every method and run before method-level limits.
+
+```typescript
+import { Controller, Get, Post } from 'stratal/router'
+import { RateLimit } from 'stratal/rate-limiter'
+
+@Controller('/api/v1/users')
+@RateLimit('api')                    // applies to every method
+export class UsersController {
+  @Get('/')
+  list(ctx: RouterContext) { /* ... */ }
+
+  @Post('/')
+  @RateLimit('writes')               // stacks with class-level 'api'
+  create(ctx: RouterContext) { /* ... */ }
+
+  @Post('/bulk')
+  @RateLimit('writes')
+  @RateLimit('bulk-writes')          // multiple decorators stack
+  bulk(ctx: RouterContext) { /* ... */ }
+}
+```
+
+Multiple `@RateLimit` decorators on the same target stack: each adds another named limiter, and all of them are enforced. Duplicate names on a single route collapse to one middleware automatically, so it is safe for a class-level and method-level decorator to reference the same name.
+
+## Response behavior
+
+On every successful response from a throttled route, the limiter sets these headers:
+
+```
+X-RateLimit-Limit:     60
+X-RateLimit-Remaining: 59
+X-RateLimit-Reset:     1735689600    (epoch seconds)
+```
+
+When a limit is exceeded, the request fails with `429 Too Many Requests` and these headers:
+
+```
+Retry-After:           42            (seconds)
+X-RateLimit-Limit:     60
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset:     1735689642
+```
+
+When multiple limits apply to one route, the headers reflect the most restrictive limit on a successful response, and the limit that triggered the rejection on a `429`.
+
+The `429` body is rendered through content negotiation, so HTML clients (browsers, Inertia) get an HTML page and JSON clients get a JSON body, without any extra configuration. To return a custom body, attach `.response(handler)` to the `Limit` in its resolver.
+
+## Custom stores
+
+`IRateLimiterStore` is a typed key-value store with TTL. The registry runs the increment math itself, so a custom store only needs to persist and read arbitrary values:
+
+```typescript
+import { Transient } from 'stratal/di'
+import type { IRateLimiterStore } from 'stratal/rate-limiter'
+
+@Transient()
+export class RedisRateLimiterStore implements IRateLimiterStore {
+  async get<T>(key: string): Promise<T | null> { /* ... */ }
+  async set<T>(key: string, value: T, ttlSeconds: number): Promise<void> { /* ... */ }
+  async delete(key: string): Promise<void> { /* ... */ }
+}
+
+// Wire it up:
+RateLimiterModule.forRoot({ store: { useClass: RedisRateLimiterStore } })
+```
+
+The class is resolved from the DI container, so it can `@inject` other services.
+
+<Aside type="caution">
+  The built-in KV store does get-modify-set without atomic increment, so concurrent edge requests against the same key may undercount under high contention. Use a Durable Object store for strict accuracy. KV's minimum `expirationTtl` is 60 seconds, but sub-60s windows are still enforced correctly through the persisted `resetAt` timestamp.
+</Aside>
+
+## Testing
+
+The testing module disables rate limiting by default. When you create a testing module, it auto-registers `NoopRateLimiterStore` against `RATE_LIMITER_TOKENS.Store`, so every counter read misses and limits never trip. This keeps suites that fire many requests from a single simulated IP from tripping production limiter budgets.
+
+A suite that tests limiter behavior must opt back into a real store by overriding the store token:
+
+```typescript
+import { Test } from '@stratal/testing'
+import { RATE_LIMITER_TOKENS, InMemoryRateLimiterStore } from 'stratal/rate-limiter'
+
+const module = await Test.createTestingModule({
+  imports: [AppModule],
+})
+  .overrideProvider(RATE_LIMITER_TOKENS.Store)
+  .useClass(InMemoryRateLimiterStore)
+  .compile()
+```
+
+With a real store in place, the limiter enforces its windows and you can assert the `429` and the `X-RateLimit-*` headers.
+
+## Errors
+
+| Error | When |
+|-------|------|
+| `TooManyRequestsError` | A limit was exceeded. HTTP 429. Already in the `dontReport` list, so it is not logged as an application error. |
+| `RateLimiterError` | Misconfiguration: `RateLimiterModule` imported without `forRoot()`, the module not imported at all while a throttle is used, or a limiter name that was never registered. Maps to HTTP 500. |
+
+`RateLimiterError` from a missing `forRoot()` surfaces at `app.initialize()`. A throttle that references an unregistered name, or a `RateLimiterModule` that was never imported, surfaces on the first throttled request. Check that the limiter name matches a `RateLimiterRegistry.for(...)` registration and that your limiter-definitions module is in your `AppModule`'s `imports`.
+
+## Related
+
+<LinkCard title="Guards" href="/guides/guards/" description="Access control that runs after middleware and before the handler." />
+<LinkCard title="Middleware" href="/guides/middleware/" description="Run logic before guards and route handlers across selected routes." />
+<LinkCard title="Testing Module" href="/testing/testing-module/" description="Create isolated app instances and override providers in tests." />

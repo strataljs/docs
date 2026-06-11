@@ -147,7 +147,7 @@ With per-connection schemas, `DatabaseService<'main'>` only exposes models defin
 
 ### Per-connection schemas
 
-Each connection has its own independent `.zmodel` file — simply define each schema separately.
+Each connection has its own independent `.zmodel` file - simply define each schema separately.
 
 **`db/main/schema.zmodel`**
 
@@ -193,25 +193,10 @@ model PageView {
 
 ## Plugins
 
-The `DatabaseModule` automatically registers the following plugins on every connection — no configuration needed:
+The `DatabaseModule` automatically registers the following plugins on every connection - no configuration needed:
 
-- **ErrorHandlerPlugin** — Transforms ZenStack errors into Stratal `ApplicationError` instances with appropriate HTTP status codes.
-- **EventEmitterPlugin** — Emits events before and after database operations, integrating with Stratal's [event system](/core-concepts/events/). See [Database Events](/framework/database-events/) for the full event pattern documentation.
-
-### SchemaSwitcherPlugin (opt-in)
-
-The only user-configurable plugin is `SchemaSwitcherPlugin`, which sets the PostgreSQL `search_path` for multi-tenant isolation:
-
-```typescript
-import { SchemaSwitcherPlugin } from '@stratal/framework/database'
-
-{
-  name: 'main',
-  schema: mainSchema,
-  dialect: () => new PostgresDialect({ pool }),
-  plugins: [new SchemaSwitcherPlugin()],
-}
-```
+- **ErrorHandlerPlugin** - Transforms ZenStack errors into Stratal `ApplicationError` instances with appropriate HTTP status codes.
+- **EventEmitterPlugin** - Emits events before and after database operations, integrating with Stratal's [event system](/core-concepts/events/). See [Database Events](/framework/database-events/) for the full event pattern documentation.
 
 ## Type-safe schema augmentation
 
@@ -232,7 +217,7 @@ declare module '@stratal/framework/database' {
 }
 ```
 
-This provides full type safety — `DatabaseService` returns a client typed with the default connection's schema, while `DatabaseService<'analytics'>` returns a client typed with the analytics schema.
+This provides full type safety - `DatabaseService` returns a client typed with the default connection's schema, while `DatabaseService<'analytics'>` returns a client typed with the analytics schema.
 
 ## CLI commands
 

@@ -127,7 +127,8 @@ Precognition requires the `HandlePrecognitiveRequests` middleware. Register it o
 
 ```typescript
 import { Module } from 'stratal/module'
-import { MiddlewareConfigurable, MiddlewareConsumer } from 'stratal/middleware'
+import type { RouteConfigurable } from 'stratal/router'
+import { Router } from 'stratal/router'
 import { HandlePrecognitiveRequests } from '@stratal/inertia'
 import { PostsController } from './posts.controller'
 
@@ -135,11 +136,11 @@ import { PostsController } from './posts.controller'
   controllers: [PostsController],
   providers: [HandlePrecognitiveRequests],
 })
-export class PostsModule implements MiddlewareConfigurable {
-  configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(HandlePrecognitiveRequests)
-      .forRoutes('/posts')
+export class PostsModule implements RouteConfigurable {
+  configureRoutes(router: Router): void {
+    router.group([PostsController], (posts) => {
+      posts.middleware(HandlePrecognitiveRequests)
+    })
   }
 }
 ```

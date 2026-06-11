@@ -1,6 +1,6 @@
 ---
 title: Durable Objects
-description: Build stateful Durable Objects with full dependency injection using StratalDurableObject — access DI services, logging, and shared providers inside your DO methods.
+description: Build stateful Durable Objects with full dependency injection using StratalDurableObject - access DI services, logging, and shared providers inside your DO methods.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -113,10 +113,10 @@ Inside `runInScope`, two additional tokens are available beyond the standard DI 
 You can inject these into any service resolved within the scope:
 
 ```typescript
-import { injectable, inject } from 'stratal/di'
+import { Transient, inject } from 'stratal/di'
 import { DI_TOKENS } from 'stratal/di'
 
-@injectable()
+@Transient()
 export class StorageService {
   constructor(
     @inject(DI_TOKENS.DurableObjectState) private readonly state: DurableObjectState,
@@ -177,7 +177,7 @@ const counterValue = await counter.increment(userId)
 ```
 
 <Aside type="note">
-  The `TASK_COUNTER` binding name must match the `name` field in your `wrangler.jsonc` Durable Object binding configuration. The `exports` pattern does not require a wrangler binding — it directly references the named export from your worker entry file.
+  The `TASK_COUNTER` binding name must match the `name` field in your `wrangler.jsonc` Durable Object binding configuration. The `exports` pattern does not require a wrangler binding - it directly references the named export from your worker entry file.
 </Aside>
 
 ## Next steps

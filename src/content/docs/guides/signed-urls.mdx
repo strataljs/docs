@@ -63,7 +63,7 @@ The method returns `false` if the signature is missing, does not match, or the l
 
 ## Outside a route handler
 
-When you have a request available (for example, inside a service called from a controller), inject the `Uri` service and use its named-route helpers — they accept the same `expiresIn` shape as `ctx.signedUrl()`.
+When you have a request available (for example, inside a service called from a controller), inject the `Uri` service and use its named-route helpers - they accept the same `expiresIn` shape as `ctx.signedUrl()`.
 
 ```typescript
 import { ROUTER_TOKENS, type Uri } from 'stratal/router'

@@ -9,7 +9,7 @@ import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
 Before you begin, make sure you have the following:
 
-- **Node.js** v22 or later — [download](https://nodejs.org/)
+- **Node.js** v22 or later - [download](https://nodejs.org/)
 
 ## Quick start
 
@@ -65,7 +65,7 @@ Head to [Your First Worker](/getting-started/your-first-worker/) for a walkthrou
 
 ## AI-powered development
 
-Stratal provides AI skills that teach your AI agent the framework's conventions, patterns, and APIs. With the skill installed, your AI agent can scaffold new projects, generate controllers, services, and modules, and wire dependency injection — all following Stratal best practices.
+Stratal provides AI skills that teach your AI agent the framework's conventions, patterns, and APIs. With the skill installed, your AI agent can scaffold new projects, generate controllers, services, and modules, and wire dependency injection - all following Stratal best practices.
 
 ### Install the Stratal skill
 
@@ -108,17 +108,17 @@ Install Stratal:
 <Tabs syncKey="pkg">
   <TabItem label="npm">
     ```bash
-    npm install stratal reflect-metadata
+    npm install stratal
     ```
   </TabItem>
   <TabItem label="yarn">
     ```bash
-    yarn add stratal reflect-metadata
+    yarn add stratal
     ```
   </TabItem>
   <TabItem label="pnpm">
     ```bash
-    pnpm add stratal reflect-metadata
+    pnpm add stratal
     ```
   </TabItem>
 </Tabs>
@@ -190,10 +190,10 @@ Create a `wrangler.jsonc` file to configure how Cloudflare deploys your worker:
 
 Key settings:
 
-- **`main`** — points to your worker entry file.
-- **`nodejs_compat`** — required so Stratal can use Node.js APIs.
-- **`ENVIRONMENT`** — a variable Stratal reads at runtime.
-- **`CACHE`** — a KV namespace binding used by Stratal's built-in caching layer. You can create one with `npx wrangler kv namespace create CACHE` and paste the returned `id` into the config.
+- **`main`** - points to your worker entry file.
+- **`nodejs_compat`** - required so Stratal can use Node.js APIs.
+- **`ENVIRONMENT`** - a variable Stratal reads at runtime.
+- **`CACHE`** - a KV namespace binding used by Stratal's built-in caching layer. You can create one with `npx wrangler kv namespace create CACHE` and paste the returned `id` into the config.
 
 ### Verify the setup
 

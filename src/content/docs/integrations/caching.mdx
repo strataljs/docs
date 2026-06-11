@@ -263,30 +263,61 @@ declare module 'stratal' {
   `withBinding` returns a new `CacheService` instance. Store it as a class property rather than calling `withBinding` on every operation.
 </Aside>
 
-## Error handling
+## Tiered cache
 
-Cache operations throw specific error types when they fail. The raw error is logged internally, and the thrown error contains only the key name to avoid leaking sensitive data:
-
-| Error class | Thrown by | Description |
-| --- | --- | --- |
-| `CacheGetError` | `get`, `getWithMetadata` | Failed to read from KV |
-| `CachePutError` | `put` | Failed to write to KV |
-| `CacheDeleteError` | `delete` | Failed to delete from KV |
-| `CacheListError` | `list` | Failed to list keys |
+KV reads are eventually consistent: a `get` can return an edge-cached value for up to roughly 60 seconds after a `put`. For keys where you need a value to be readable immediately after writing it on the same isolate, inject `TieredCacheService` instead of `CacheService`. It layers an in-memory L1 over KV, giving isolate-local read-after-write coherence while KV remains the source of truth.
 
 ```typescript
-import { CacheGetError } from 'stratal/cache'
+import { Transient, inject } from 'stratal/di'
+import { CACHE_TOKENS, type TieredCacheService } from 'stratal/cache'
 
-try {
-  const value = await cache.get('key')
-} catch (error) {
-  if (error instanceof CacheGetError) {
-    // Handle cache read failure
+@Transient()
+export class IdempotencyService {
+  constructor(
+    @inject(CACHE_TOKENS.TieredCacheService) private readonly cache: TieredCacheService,
+  ) {}
+
+  async claim(id: string): Promise<boolean> {
+    if (await this.cache.get(`claim:${id}`)) {
+      return false
+    }
+    await this.cache.put(`claim:${id}`, '1', { expirationTtl: 86400 })
+    return true
   }
 }
 ```
 
-All cache errors extend `ApplicationError` and use the `INFRASTRUCTURE_ERROR` error code, so they are logged automatically by the global error handler.
+`TieredCacheService` exposes the same API as `CacheService` (`get`, `getWithMetadata`, `put`, `delete`, `list`), plus `binding(name)` to bind to another KV namespace by its binding name. Each binding gets its own isolate-local L1.
+
+### When to use it
+
+Reach for the tiered cache when a key is **set once and then read often**, such as idempotency claims or immutable lookups. A write made through an isolate becomes immediately and consistently visible to later reads on that same isolate, which closes the read-after-write gap that plain KV leaves open.
+
+<Aside type="caution">
+  Do not use the tiered cache for read-modify-write counters that need cross-edge freshness, such as rate limiting. The L1 only observes writes made through its own isolate, so an isolate reads its own value until the entry expires. Concurrent increments from other isolates are missed and overwritten. Use plain `CacheService` (KV) or a Durable Object store for those.
+</Aside>
+
+## Error handling
+
+Cache operations throw `CacheError` when they fail. The raw error is logged internally, and the thrown error contains only the key name to avoid leaking sensitive data:
+
+| Error class | Thrown by | Description |
+| --- | --- | --- |
+| `CacheError` | `get`, `getWithMetadata`, `put`, `delete`, `list` | A KV operation failed |
+
+```typescript
+import { CacheError } from 'stratal/cache'
+
+try {
+  const value = await cache.get('key')
+} catch (error) {
+  if (error instanceof CacheError) {
+    // Handle cache operation failure
+  }
+}
+```
+
+`CacheError` extends `ApplicationError`, so it is logged automatically by the global error handler.
 
 ## Next steps
 

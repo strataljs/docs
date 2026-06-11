@@ -71,9 +71,9 @@ This starts an MCP server using the stdio transport. The server registers each A
 
 Each OpenAPI operation is converted into an MCP tool:
 
-- **Tool name** — uses the route's `operationId` if set, otherwise generates one from the method and path (e.g., `get_api_users`)
-- **Description** — combines the route's `summary` and `description`
-- **Input schema** — built from path parameters, query parameters, and request body:
+- **Tool name** - uses the route's `operationId` if set, otherwise generates one from the method and path (e.g., `get_api_users`)
+- **Description** - combines the route's `summary` and `description`
+- **Input schema** - built from path parameters, query parameters, and request body:
 
 | Source | Input key format | Example |
 | --- | --- | --- |
@@ -100,7 +100,7 @@ The MCP server exposes the full OpenAPI specification as a resource at `openapi:
 
 ## Client installation
 
-Configure your AI agent to connect to the Stratal MCP server. Each example assumes your project is at `/path/to/your/project` — replace this with the actual path to your Stratal application.
+Configure your AI agent to connect to the Stratal MCP server. Each example assumes your project is at `/path/to/your/project` - replace this with the actual path to your Stratal application.
 
 <Tabs>
 <TabItem label="Claude Code">
@@ -218,14 +218,14 @@ Add to your project's `opencode.json`:
 
 ## Stratal skills
 
-Stratal provides AI skills that teach your AI agent the framework's conventions, patterns, and APIs. When installed, your AI agent automatically applies Stratal best practices — correct decorators, import paths, module structure, and more.
+Stratal provides AI skills that teach your AI agent the framework's conventions, patterns, and APIs. When installed, your AI agent automatically applies Stratal best practices - correct decorators, import paths, module structure, and more.
 
 ### What skills provide
 
-- **Framework rules** — patterns that prevent runtime failures (DI decorators, import paths, ESM requirements)
-- **Reference guides** — modules, routing, DI, events, queues, cron, database, auth, access control, testing, and more
-- **Project scaffold** — templates for bootstrapping new Stratal projects
-- **Gotchas** — Cloudflare Workers constraints and common pitfalls
+- **Framework rules** - patterns that prevent runtime failures (DI decorators, import paths, ESM requirements)
+- **Reference guides** - modules, routing, DI, events, queues, cron, database, auth, access control, testing, and more
+- **Project scaffold** - templates for bootstrapping new Stratal projects
+- **Gotchas** - Cloudflare Workers constraints and common pitfalls
 
 ### Installing skills
 

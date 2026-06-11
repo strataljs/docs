@@ -1,6 +1,6 @@
 ---
 title: Access Control
-description: Role-based permissions for authenticated users — define resources and roles in one place, then enforce them with guards or service-level checks.
+description: Role-based permissions for authenticated users - define resources and roles in one place, then enforce them with guards or service-level checks.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -37,7 +37,7 @@ export const permissions = createAccessControl({
 })
 ```
 
-The return value is `{ ac, roles }` — a Better Auth access-control descriptor that you can spread into both Stratal's `AuthModule` and Better Auth's `admin` plugin.
+The return value is `{ ac, roles }` - a Better Auth access-control descriptor that you can spread into both Stratal's `AuthModule` and Better Auth's `admin` plugin.
 
 ## Wiring it into AuthModule
 
@@ -69,7 +69,7 @@ When `accessControl` is provided, `AuthModule` registers `AccessService` and add
 
 ## Composing roles
 
-There is no implicit role hierarchy. To build a role on top of another, use `extendRole()` — it returns a new role with permissions from the parent merged with any additional permissions you specify.
+There is no implicit role hierarchy. To build a role on top of another, use `extendRole()` - it returns a new role with permissions from the parent merged with any additional permissions you specify.
 
 ```typescript
 import { extendRole } from '@stratal/framework/access-control'
@@ -85,14 +85,15 @@ const finalPermissions = {
 }
 ```
 
-Pass `finalPermissions` to `AuthModule` instead of `permissions`. Overlapping resource keys are unioned — `extendRole` never overwrites a parent's actions.
+Pass `finalPermissions` to `AuthModule` instead of `permissions`. Overlapping resource keys are unioned - `extendRole` never overwrites a parent's actions.
 
 ## Checking permissions in routes
 
 The simplest way to enforce a permission is to apply `AuthGuard` with a `permissions` option. Each entry is a `'resource:action'` string; arrays require the user to have *all* listed permissions.
 
 ```typescript
-import { Controller, Route, type RouterContext, UseGuards } from 'stratal/router'
+import { Controller, Route, type RouterContext } from 'stratal/router'
+import { UseGuards } from 'stratal/guards'
 import { AuthGuard } from '@stratal/framework/guards'
 
 @Controller('/posts')
@@ -167,7 +168,7 @@ Permission objects map a resource name to the actions you require on that resour
 { posts: ['update', 'delete'] }
 ```
 
-Use `'*'` to require *any* action on a resource — useful when you only care that the user has some level of access:
+Use `'*'` to require *any* action on a resource - useful when you only care that the user has some level of access:
 
 ```typescript
 access.currentUserHasPermission({ posts: ['*'] })
@@ -177,7 +178,7 @@ A user is granted access if **any** of their roles satisfies the requested permi
 
 ## Multiple roles per user
 
-`setUserRole` accepts a single role or an array. Multiple roles are stored as a comma-separated string in the `user.role` column and evaluated independently — the user is granted access if any role permits the action.
+`setUserRole` accepts a single role or an array. Multiple roles are stored as a comma-separated string in the `user.role` column and evaluated independently - the user is granted access if any role permits the action.
 
 ```typescript
 await access.setUserRole(userId, ['editor', 'reviewer'])

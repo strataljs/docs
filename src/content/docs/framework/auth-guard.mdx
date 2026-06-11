@@ -5,7 +5,7 @@ description: Protect routes with authentication and permission checks using the 
 
 import { Aside } from '@astrojs/starlight/components';
 
-The `AuthGuard` factory from `@stratal/framework/guards` creates guards that check authentication and, optionally, permission. It works with `AuthContext` for authentication and with `AccessService` for permission checks — both supplied automatically when their respective modules are configured.
+The `AuthGuard` factory from `@stratal/framework/guards` creates guards that check authentication and, optionally, permission. It works with `AuthContext` for authentication and with `AccessService` for permission checks, both supplied automatically when their respective modules are configured.
 
 ## Authentication only
 
@@ -13,7 +13,7 @@ Apply `AuthGuard()` without options to require authentication on a controller or
 
 ```typescript
 import { Controller, IController, Route, RouterContext } from 'stratal/router'
-import { UseGuards } from 'stratal/router'
+import { UseGuards } from 'stratal/guards'
 import { AuthGuard } from '@stratal/framework/guards'
 
 @Controller('/api/profile')
@@ -51,7 +51,7 @@ export class AdminUsersController implements IController {
 @UseGuards(AuthGuard({ permissions: ['posts:delete', 'admin:access'] }))
 ```
 
-A bare resource without an action (e.g. `'admin'`) is treated as a wildcard — the user passes if they have any action defined for that resource.
+A bare resource without an action (e.g. `'admin'`) is treated as a wildcard: the user passes if they have any action defined for that resource.
 
 `AuthGuard` first verifies authentication (401 if not authenticated), then checks permissions through `AccessService` (403 if unauthorized). The permission check reads roles from `AuthContext`, so it doesn't trigger an extra database query.
 
@@ -84,6 +84,10 @@ export class StudentsController implements IController {
 | `InsufficientPermissionsError` | 403 | User is authenticated but lacks the required permissions |
 
 Both errors are handled by Stratal's global error handler and produce JSON error responses with localised messages.
+
+<Aside type="note" title="Not the only 403">
+  A 403 from a guard is always an `InsufficientPermissionsError`: the user is authenticated but lacks the required permission. Better Auth itself can raise other 403 responses during auth flows, such as a `FreshSessionRequiredError` when a sensitive operation needs a recently authenticated session. Those are not guard errors. See the [auth error reference](/framework/auth/#auth-errors) for the full set.
+</Aside>
 
 ## Prerequisites
 

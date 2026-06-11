@@ -82,7 +82,7 @@ export class UsersController {
 }
 ```
 
-Notice that method names are arbitrary — there is no `IController` interface to implement. The HTTP method and path are determined entirely by the decorator.
+Notice that method names are arbitrary - there is no `IController` interface to implement. The HTTP method and path are determined entirely by the decorator.
 
 ## Decorator reference
 
@@ -100,8 +100,8 @@ Each decorator takes a `path` and an optional `config` object:
 Key points:
 
 - **`path`** is relative to the controller's base path. `@Get('/:id')` on a controller at `/api/users` registers `GET /api/users/:id`.
-- **Method names are arbitrary.** Name your methods whatever makes sense — there is no `IController` interface to implement.
-- **`config`** accepts the same `RouteConfig` properties as `@Route` (body, params, query, response, tags, security, summary, description, hideFromDocs) plus `statusCode`. The `body` property accepts a `RouteBody` — either a bare Zod schema (defaults to `application/json`) or a `{ schema, contentType? }` object for custom content types. Similarly, `response` accepts a `RouteResponse` — a bare Zod schema or a `{ schema, description?, contentType? }` object.
+- **Method names are arbitrary.** Name your methods whatever makes sense - there is no `IController` interface to implement.
+- **`config`** accepts the same `RouteConfig` properties as `@Route` (body, params, query, response, tags, security, summary, description, hideFromDocs) plus `statusCode`. The `body` property accepts a `RouteBody` - either a bare Zod schema (defaults to `application/json`) or a `{ schema, contentType? }` object for custom content types. Similarly, `response` accepts a `RouteResponse` - a bare Zod schema or a `{ schema, description?, contentType? }` object.
 
 <Aside type="note">
   The default success status code is **200** for all HTTP method decorators. Unlike convention-based routing where `create()` defaults to 201, you must set `statusCode: 201` explicitly when using `@Post` for resource creation.
@@ -182,7 +182,8 @@ export class ProxyController {
 Guards work the same way with HTTP method decorators. Apply `@UseGuards` at the controller or method level:
 
 ```typescript
-import { Controller, Get, Delete, UseGuards, RouterContext } from 'stratal/router'
+import { Controller, Get, Delete, RouterContext } from 'stratal/router'
+import { UseGuards } from 'stratal/guards'
 import { AuthGuard } from './auth.guard'
 import { RolesGuard } from './roles.guard'
 

@@ -3,7 +3,7 @@ title: Modules
 description: The @Module decorator, imports, providers, and static vs dynamic modules.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, Steps } from '@astrojs/starlight/components';
 
 Modules are the primary way you organize a Stratal application. A module groups related controllers, providers, and other modules into a cohesive unit. Every Stratal application has at least one module: the **root module**.
 
@@ -162,26 +162,85 @@ The `inject` array tells Stratal which dependencies to resolve and pass to `useF
   The `DynamicModule` interface extends `ModuleOptions` (minus `imports`) and adds a required `module` property that references the module class. This reference is needed so Stratal can call lifecycle hooks on the module instance.
 </Aside>
 
-## Middleware configuration
+## Lazy module loading
 
-Modules can configure middleware by implementing the `MiddlewareConfigurable` interface. Define a `configure()` method that receives a `MiddlewareConsumer`:
+Most modules are wired up eagerly at bootstrap when Stratal walks the import tree. A heavy or rarely used module can instead be loaded on demand, keeping it out of the cold start path until the first time a request actually needs it.
+
+Inject `DI_TOKENS.LazyModuleLoader` and call `load()` with a function that dynamically imports the module:
 
 ```typescript
-import { Module } from 'stratal/module'
-import { MiddlewareConfigurable, MiddlewareConsumer } from 'stratal/middleware'
-import { LoggingMiddleware } from './logging.middleware'
+import { Controller, IController, Route, RouterContext } from 'stratal/router'
+import { inject, DI_TOKENS } from 'stratal/di'
+import { LazyModuleLoader } from 'stratal/module'
 
-@Module({
-  controllers: [UsersController],
-})
-export class UsersModule implements MiddlewareConfigurable {
-  configure(consumer: MiddlewareConsumer) {
-    consumer.apply(LoggingMiddleware).forRoutes('/api/users/*')
+@Controller('/api/reports')
+export class ReportsController implements IController {
+  constructor(
+    @inject(DI_TOKENS.LazyModuleLoader) private readonly loader: LazyModuleLoader,
+  ) {}
+
+  @Route({ response: reportSchema })
+  async generate(ctx: RouterContext) {
+    const ref = await this.loader.load(() =>
+      import('./reports/reports.module').then((m) => m.ReportsModule),
+    )
+    const reports = ref.get(ReportsService)
+    return ctx.json(await reports.build())
   }
 }
 ```
 
-For a complete guide on writing and applying middleware, see the [Middleware guide](/guides/middleware/).
+`load()` returns a `ModuleRef` that resolves providers from the loaded module:
+
+| Method            | Description                                            |
+| ----------------- | ----------------------------------------------------- |
+| `ref.get(token)`  | Resolve a provider synchronously                       |
+| `ref.resolve(token)` | Async variant that returns a `Promise` of the provider |
+
+Here is what happens when a module is loaded lazily:
+
+<Steps>
+
+1. The module's nested `imports` and `providers` are registered into the global container.
+
+2. The module's `onInitialize` hook runs exactly once.
+
+3. A `ModuleRef` is returned so you can resolve any of the module's providers.
+
+</Steps>
+
+Loading the same module again returns the cached `ModuleRef` without re-registering or re-running `onInitialize`. Singletons resolve to a single shared instance no matter how many times the module is loaded.
+
+<Aside type="caution">
+  Controllers, queue consumers, and cron jobs declared by a lazily loaded module are skipped, because route, queue, and cron wiring is finalized at bootstrap and cannot be extended at runtime. Use lazy modules for providers and services only. If a lazy module provides a token that another module already bound, the existing binding wins and the colliding provider is ignored.
+</Aside>
+
+<Aside type="note">
+  `LazyModuleLoader` defers an entire module's evaluation and registration. To defer a single class reference and break a circular dependency, use `lazy()` from `stratal/di` instead. See [Dependency Injection](/core-concepts/dependency-injection/#break-circular-dependencies-with-lazy).
+</Aside>
+
+## Middleware configuration
+
+Modules can configure middleware by implementing the `RouteConfigurable` interface. Define a `configureRoutes()` method that receives a `Router`:
+
+```typescript
+import { Module } from 'stratal/module'
+import type { RouteConfigurable } from 'stratal/router'
+import { Router } from 'stratal/router'
+import { LoggingMiddleware } from './logging.middleware'
+
+@Module({
+  controllers: [UsersController],
+  providers: [LoggingMiddleware],
+})
+export class UsersModule implements RouteConfigurable {
+  configureRoutes(router: Router): void {
+    router.middleware(LoggingMiddleware)
+  }
+}
+```
+
+`router.middleware()` scopes middleware to this module's controllers, `router.use()` registers it globally, and `router.group()` scopes it to specific controllers. For a complete guide on writing and applying middleware, see the [Middleware guide](/guides/middleware/).
 
 ## Next steps
 

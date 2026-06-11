@@ -3,21 +3,26 @@ title: Database Events
 description: Automatically emitted events for database operations with pattern matching and type-safe contexts.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-Stratal automatically emits events before and after every database operation. The `EventEmitterPlugin` is auto-registered by the `DatabaseModule` — no additional setup is required. These events integrate with the core [event system](/core-concepts/events/) and support the same pattern matching, priority, and blocking behavior.
+Stratal automatically emits events for every database operation. The `EventEmitterPlugin` is auto-registered by the `DatabaseModule`, so no additional setup is required. These events integrate with the core [event system](/core-concepts/events/) and support the same pattern matching, priority, and blocking behavior.
 
-## Event pattern
+Two families of events are emitted:
 
-Database events follow the pattern `{phase}.{Model}.{operation}`:
+- **Query events** (`before.{Model}.{operation}` / `after.{Model}.{operation}`) wrap the raw query and carry the operation arguments and result.
+- **Entity mutation events** (`entity.{Model}.{verb}`) carry full entity snapshots taken before and after the mutation.
+
+## Query event pattern
+
+Query events follow the pattern `{phase}.{Model}.{operation}`:
 
 | Segment | Values | Example |
 | --- | --- | --- |
 | Phase | `before`, `after` | `before`, `after` |
 | Model | Any model name from your schema | `User`, `Post` |
-| Operation | `create`, `update`, `delete`, etc. | `create` |
+| Operation | `create`, `update`, `delete`, `findMany`, `count`, etc. | `create` |
 
-A full event name looks like `after.User.create` or `before.Post.update`.
+A full event name looks like `after.User.create` or `before.Post.update`. These events fire for read operations too, such as `after.User.findMany`.
 
 ## Listening to database events
 
@@ -91,16 +96,16 @@ async onAnyAfterEvent(context: EventContext<'after'>) {
 }
 ```
 
-## Event context
+## Query event context
 
-The event context is a discriminated union based on the event pattern:
+The query event context is a discriminated union based on the event pattern:
 
 ### Exact events (`after.User.create`)
 
 ```typescript
 interface ExactEventContext {
   data: UserCreateInput          // before: mutable, after: readonly
-  result: User                   // only available in after phase
+  result: User                   // only present in the after phase
 }
 ```
 
@@ -136,7 +141,109 @@ interface PhaseWildcardContext {
 ```
 
 <Aside type="tip">
-  For exact event patterns like `after.User.create`, the context is fully typed — `data` and `result` match the model's types. Wildcard patterns use `unknown` since the model or operation is not known at compile time.
+  For exact event patterns like `after.User.create`, the context is fully typed: `data` and `result` match the model's types. Wildcard patterns use `unknown` since the model or operation is not known at compile time.
+</Aside>
+
+## Entity mutation events
+
+Query events carry the raw operation arguments and result, which are not always the shape you want to react to. A `delete` carries the `where` filter, an `update` carries only the changed fields, and a `createMany` carries an array. When you want to work with complete entity rows, listen for **entity mutation events** instead.
+
+Entity events follow the pattern `entity.{Model}.{verb}`:
+
+| Segment | Values | Example |
+| --- | --- | --- |
+| Model | Any model name from your schema | `User`, `Post` |
+| Verb | `created`, `updated`, `deleted` | `created` |
+
+A full event name looks like `entity.User.created` or `entity.Post.updated`. One event is emitted per affected row, so a bulk operation that touches many rows emits one entity event per row.
+
+### Entity event context
+
+Each entity event carries `model`, `action`, and a pair of full entity snapshots. Which snapshots are populated depends on the verb:
+
+```typescript
+// entity.User.created
+interface EntityCreatedContext {
+  model: 'User'
+  action: 'created'
+  before: undefined        // nothing existed beforehand
+  after: User              // the created row
+}
+
+// entity.User.updated
+interface EntityUpdatedContext {
+  model: 'User'
+  action: 'updated'
+  before: User             // the row as it was before the update
+  after: User              // the row after the update
+}
+
+// entity.User.deleted
+interface EntityDeletedContext {
+  model: 'User'
+  action: 'deleted'
+  before: User             // the row as it was before deletion
+  after: undefined         // nothing remains
+}
+```
+
+<Tabs>
+  <TabItem label="Created">
+    ```typescript
+    @On('entity.User.created')
+    async onUserCreated(context: EventContext<'entity.User.created'>) {
+      const user = context.after
+      // index the new user, send a welcome email, etc.
+    }
+    ```
+  </TabItem>
+  <TabItem label="Updated">
+    ```typescript
+    @On('entity.User.updated')
+    async onUserUpdated(context: EventContext<'entity.User.updated'>) {
+      const { before, after } = context
+      if (before.email !== after.email) {
+        // react to the email change with both snapshots in hand
+      }
+    }
+    ```
+  </TabItem>
+  <TabItem label="Deleted">
+    ```typescript
+    @On('entity.User.deleted')
+    async onUserDeleted(context: EventContext<'entity.User.deleted'>) {
+      const user = context.before
+      // clean up related records, archive the removed row, etc.
+    }
+    ```
+  </TabItem>
+</Tabs>
+
+### Entity wildcards
+
+Entity events support the same hierarchical pattern matching as query events:
+
+| Pattern | Matches |
+| --- | --- |
+| `entity.User.created` | A specific model and verb |
+| `entity.User` | All mutations on the User model |
+| `entity.updated` | Every model that is updated |
+| `entity` | Every entity mutation across all models |
+
+```typescript
+@On('entity.User')
+async onAnyUserMutation(context: EventContext<'entity.User'>) {
+  // context.action is 'created', 'updated', or 'deleted'
+  // before / after are populated according to the action
+}
+```
+
+<Aside type="caution">
+  Entity events are listener driven. The pre-mutation snapshot is loaded only when a matching listener is registered, so models nobody observes pay no overhead. A wildcard subscription like `entity` matches every model, which makes every mutation pay for the pre-read. Subscribe per model when that cost matters.
+</Aside>
+
+<Aside type="note">
+  Snapshots are loaded inside the mutation's transaction, so they reflect the committed state and resolve against the active request scope.
 </Aside>
 
 ## Blocking behavior
@@ -145,12 +252,13 @@ Database events follow the same blocking rules as core events:
 
 - **`before.*`** events are always **blocking**. The database operation waits for all handlers to complete before proceeding.
 - **`after.*`** events are **non-blocking** by default. Handlers run in the background via `waitUntil`.
+- **`entity.*`** events are **blocking** by default, the same as custom events.
 
-This means `before` handlers can validate or modify data before it reaches the database, while `after` handlers run without delaying the response.
+This means `before` handlers can validate or modify data before it reaches the database, while `after` handlers run without delaying the response. As with core events, you can override any default with the `blocking` option on `@On()`.
 
 ## Type-safe augmentation
 
-The framework automatically augments the core `CustomEventRegistry` with your database events based on the `StratalDatabase` schema augmentation. Once you've set up [database type augmentation](/framework/database/), your database events are automatically type-safe.
+The framework automatically augments the core `CustomEventRegistry` with both your query events and your entity mutation events, based on the `StratalDatabase` schema augmentation. Once you've set up [database type augmentation](/framework/database/), every database event name autocompletes and its context is fully typed. For entity events, `before` and `after` resolve to the full model type.
 
 ## Next steps
 

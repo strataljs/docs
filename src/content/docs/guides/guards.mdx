@@ -36,7 +36,8 @@ The `@UseGuards` decorator attaches guards to controllers or individual methods.
 Apply a guard to every route in a controller:
 
 ```typescript
-import { Controller, IController, UseGuards, Route, RouterContext } from 'stratal/router'
+import { Controller, IController, Route, RouterContext } from 'stratal/router'
+import { UseGuards } from 'stratal/guards'
 import { z } from 'stratal/validation'
 import { AuthGuard } from './auth.guard'
 

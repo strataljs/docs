@@ -30,8 +30,8 @@ export class UsersController implements IController {
 
 The `@Controller` decorator takes two arguments:
 
-1. **`route`** (required) — the base path for all routes in this controller.
-2. **`options`** (optional) — an object with:
+1. **`route`** (required) - the base path for all routes in this controller.
+2. **`options`** (optional) - an object with:
 
 | Option          | Type         | Description                                           |
 | --------------- | ------------ | ----------------------------------------------------- |
@@ -181,7 +181,7 @@ return ctx.redirect('/login', 302)
 
 `RouterContext` provides three methods for streaming data to the client:
 
-#### `stream(callback, onError?)` — Binary / generic streaming
+#### `stream(callback, onError?)` - Binary / generic streaming
 
 ```typescript
 @Get('/download', { response: { schema: z.any(), contentType: 'application/octet-stream' } })
@@ -192,7 +192,7 @@ download(ctx: RouterContext) {
 }
 ```
 
-#### `streamText(callback, onError?)` — Text streaming
+#### `streamText(callback, onError?)` - Text streaming
 
 ```typescript
 @Get('/text', { response: { schema: z.any(), contentType: 'text/plain' } })
@@ -204,7 +204,7 @@ text(ctx: RouterContext) {
 }
 ```
 
-#### `streamSSE(callback, onError?)` — Server-Sent Events
+#### `streamSSE(callback, onError?)` - Server-Sent Events
 
 ```typescript
 @Get('/events', { response: { schema: z.any(), contentType: 'text/event-stream' } })
@@ -271,7 +271,8 @@ export class HealthController implements IController {
 Guards control whether a request is allowed to proceed. Apply them at the controller level or on individual methods using the `@UseGuards` decorator:
 
 ```typescript
-import { Controller, IController, UseGuards, Route, RouterContext } from 'stratal/router'
+import { Controller, IController, Route, RouterContext } from 'stratal/router'
+import { UseGuards } from 'stratal/guards'
 import { AuthGuard } from './auth.guard'
 import { RolesGuard } from './roles.guard'
 
@@ -361,10 +362,11 @@ The response displays the status, headers, and formatted body.
 
 ## Route groups and the fluent router API
 
-Modules can implement the `RouteConfigurable` interface to configure routing with a fluent builder API. This gives you control over route prefixes, domain patterns, middleware, versioning, and grouping — all scoped to the module's controllers.
+Modules can implement the `RouteConfigurable` interface to configure routing with a fluent builder API. This gives you control over route prefixes, domain patterns, middleware, versioning, and grouping - all scoped to the module's controllers.
 
 ```typescript
-import { Module, type RouteConfigurable, type Router } from 'stratal/module'
+import { Module } from 'stratal/module'
+import type { RouteConfigurable, Router } from 'stratal/router'
 import { AuthMiddleware } from './auth.middleware'
 
 @Module({
@@ -446,7 +448,7 @@ import { route } from 'stratal/router'
 const url = route('users.show', { id: '42' })
 ```
 
-The `Uri` service exposes the same primitives plus request-aware helpers like `current()`, `full()`, `previous()`, `to()`, `query()`, and sticky parameter `defaults()` — useful when you want to share a default like `locale` across many `route()` calls in a single request. Resolve it from the request container:
+The `Uri` service exposes the same primitives plus request-aware helpers like `current()`, `full()`, `previous()`, `to()`, `query()`, and sticky parameter `defaults()` - useful when you want to share a default like `locale` across many `route()` calls in a single request. Resolve it from the request container:
 
 ```typescript
 import { ROUTER_TOKENS, type Uri } from 'stratal/router'
@@ -460,12 +462,55 @@ uri.route('posts.index') // auto-fills :locale param
   You can also generate [signed URLs](/guides/signed-urls/) with `ctx.signedUrl()` for tamper-proof, expiring links.
 </Aside>
 
+### Locale-aware URLs
+
+When a route carries a `:locale` path segment, passing a `locale` param prefixes the generated URL automatically. This is the building block for SEO needs like canonical links, locale switchers, and hreflang alternates:
+
+```typescript
+// Route path: '/{locale}/posts'
+uri.route('posts.index', { locale: 'fr' })
+// → '/fr/posts'
+```
+
+Whether the default locale is prefixed follows your i18n path configuration. Set a sticky `locale` default once and every later `route()` call fills the segment for you:
+
+```typescript
+uri.defaults({ locale: ctx.getLocale() })
+uri.route('posts.index') // → '/fr/posts'
+uri.route('posts.show', { id: '42' }) // → '/fr/posts/42'
+```
+
+To compute locale path variants directly (for emitting hreflang `<link>` tags or a canonical URL across every supported locale), inject the `LocaleUrlService`:
+
+```typescript
+import { ROUTER_TOKENS, type LocaleUrlService } from 'stratal/router'
+
+const localeUrl = ctx.getContainer().resolve<LocaleUrlService>(ROUTER_TOKENS.LocaleUrlService)
+
+localeUrl.applyPrefix('/posts', 'fr') // → '/fr/posts' (respects prefixDefaultLocale)
+localeUrl.stripPrefix('/fr/posts') // → '/posts'
+localeUrl.shouldPrefix('en') // false when 'en' is the unprefixed default
+```
+
+A typical hreflang block iterates supported locales, applying the prefix to the current path and pairing each with an absolute URL:
+
+```typescript
+const path = uri.current()
+const alternates = locales.map((locale) => ({
+  hreflang: locale,
+  href: uri.to(localeUrl.applyPrefix(localeUrl.stripPrefix(path), locale), undefined, { absolute: true }),
+}))
+```
+
+<Aside type="note">
+  `LocaleUrlService` reads the locale path configuration resolved by the i18n module. Configure locale detection and path strategy on the [Internationalization](/integrations/i18n/) page; this page covers URL *generation* from that configuration.
+</Aside>
+
 ## Trailing slashes
 
 By default Stratal accepts both `/users` and `/users/` for the same route. To enforce a canonical form, pass a `trailingSlash` option to the `Stratal` constructor:
 
 ```typescript
-import 'reflect-metadata'
 import { Stratal } from 'stratal'
 import { AppModule } from './app.module'
 
@@ -481,9 +526,36 @@ export default new Stratal({
 | `'always'` | Requests without a trailing slash redirect (308) to the trailing-slash form. URL generation appends `/`. |
 | `'never'` | Requests with a trailing slash redirect (308) to the non-trailing form. URL generation strips `/`. |
 
-The redirect uses HTTP 308 so request bodies survive on `POST`, `PUT`, and `PATCH`. Paths whose final segment contains a dot (e.g. `/openapi.json`) and the root `/` are always passed through unchanged.
+The redirect uses HTTP 308 so request bodies survive on `POST`, `PUT`, and `PATCH`. The `Location` header is path-relative (no scheme or host), which avoids mixed-content blocks behind an HTTPS-terminating proxy. Paths whose final segment contains a dot (e.g. `/openapi.json`) and the root `/` are always passed through unchanged.
 
 `ctx.route()`, the standalone `route()` function, and the `Uri` service all apply the configured mode automatically, so generated URLs stay consistent with the redirect behaviour.
+
+### Excluding paths from canonicalization
+
+Some paths have a canonical form dictated by an external party: an OAuth redirect URI registered with an identity provider is matched byte for byte, so neither slash form may be rewritten. Pass `{ mode, exclude }` instead of a bare mode to exempt those paths:
+
+```typescript
+export default new Stratal({
+  module: AppModule,
+  trailingSlash: {
+    mode: 'always',
+    exclude: ['/auth/oauth2', /^\/webhooks\//],
+  },
+})
+```
+
+Excluded paths are never redirected (no 308) and never rewritten by URL generation. Both slash forms are served exactly as requested.
+
+| Pattern type | Matching behaviour |
+| --- | --- |
+| `string` | Segment-aware prefix. `'/auth/oauth2'` exempts `/auth/oauth2` and `/auth/oauth2/callback/x`, but not `/auth/oauth2-other`. |
+| `RegExp` | Tested against both forms of the pathname (with and without the trailing slash), so anchoring to either form exempts both. |
+
+Exclusions match in route space. When path-based locale detection is active, a leading locale segment is stripped before matching, so `'/callback'` also exempts `/fr/callback`.
+
+<Aside type="note">
+  The standalone helpers `resolveTrailingSlash` and `isTrailingSlashExcluded`, along with the types `TrailingSlashConfig`, `TrailingSlashOptions`, `TrailingSlashMode`, and `TrailingSlashExclude`, are exported from `stratal/router` for tooling that needs to reason about the configured canonical form.
+</Aside>
 
 ## Next steps
 

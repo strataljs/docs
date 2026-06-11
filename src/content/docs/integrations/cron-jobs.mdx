@@ -35,7 +35,7 @@ import { LOGGER_TOKENS, type LoggerService } from 'stratal/logger'
 
 @Transient()
 export class CleanupJob implements CronJob {
-  readonly schedule = '0 2 * * *' // Daily at 2 AM UTC
+  static schedule = '0 2 * * *' // Daily at 2 AM UTC
 
   constructor(
     @inject(LOGGER_TOKENS.LoggerService) private readonly logger: LoggerService,
@@ -54,13 +54,22 @@ export class CleanupJob implements CronJob {
 }
 ```
 
-The `CronJob` interface has three members:
+The `CronJob` interface declares two members:
 
 | Member | Type | Required | Description |
 | --- | --- | --- | --- |
-| `schedule` | `readonly string` | Yes | Cron expression that must match a trigger in `wrangler.jsonc` |
 | `execute` | `(controller: ScheduledController) => Promise<void>` | Yes | The work to perform when the schedule fires |
 | `onError` | `(error: Error, controller: ScheduledController) => Promise<void>` | No | Called when `execute` throws; errors here are silently caught |
+
+The `schedule` is declared as a **static** property on the class, not as part of the `CronJob` interface. Stratal reads it off the class at registration time, before any instance is created, so it must be `static`:
+
+```typescript
+static schedule = '0 2 * * *' // Cron expression; must match a trigger in wrangler.jsonc
+```
+
+<Aside type="caution">
+  A job class without a `static schedule` property is skipped at boot: Stratal logs a warning naming the class and never registers it. If a job silently never runs, confirm `schedule` is declared `static` and that its expression exactly matches a trigger in `wrangler.jsonc`.
+</Aside>
 
 The `ScheduledController` is the standard Cloudflare Workers type that provides `scheduledTime` (the timestamp of when the trigger fired) and `cron` (the matching cron expression).
 
@@ -88,7 +97,7 @@ You can register several jobs with the same `schedule` value. Stratal groups job
 ```typescript
 @Transient()
 export class ExpireSessionsJob implements CronJob {
-  readonly schedule = '0 * * * *' // Every hour
+  static schedule = '0 * * * *' // Every hour
 
   async execute(controller: ScheduledController) {
     // expire old sessions
@@ -97,7 +106,7 @@ export class ExpireSessionsJob implements CronJob {
 
 @Transient()
 export class RefreshCacheJob implements CronJob {
-  readonly schedule = '0 * * * *' // Same schedule
+  static schedule = '0 * * * *' // Same schedule
 
   async execute(controller: ScheduledController) {
     // refresh cache entries
@@ -130,6 +139,10 @@ This aggregate error is then handled by the `GlobalErrorHandler`, ensuring all f
 <Aside type="note">
   Because jobs run sequentially, a slow job delays subsequent jobs on the same schedule. Keep individual jobs focused and fast.
 </Aside>
+
+## Built-in jobs
+
+Stratal ships the `FailedJobCleanupJob` cron, which deletes aged queue failed jobs. It is opt-in: add it to a module's `jobs` array and a matching trigger to `wrangler.jsonc`. See [Queues, automatic cleanup](/integrations/queues/#automatic-cleanup-opt-in-cron) for configuration and retention details.
 
 ## Worker setup
 

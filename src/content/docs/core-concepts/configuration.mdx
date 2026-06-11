@@ -3,9 +3,9 @@ title: Configuration
 description: Typed config namespaces, dot-notation access, schema validation, and runtime overrides with registerAs and ConfigService.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, LinkCard } from '@astrojs/starlight/components';
 
-The configuration system gives you a structured, type-safe way to manage application settings in Stratal. It is environment-agnostic — the framework never reads environment variables directly. Instead, your application defines **config namespaces** that extract values from the Cloudflare `Env` object and expose them through a centralized `ConfigService`.
+The configuration system gives you a structured, type-safe way to manage application settings in Stratal. It is environment-agnostic - the framework never reads environment variables directly. Instead, your application defines **config namespaces** that extract values from the Cloudflare `Env` object and expose them through a centralized `ConfigService`.
 
 Key capabilities:
 
@@ -14,13 +14,38 @@ Key capabilities:
 - Optional Zod schema validation at startup
 - Runtime overrides via `config.set()` for request-scoped values
 
+## Application config versus namespaced config
+
+Two layers of configuration coexist, and they serve different purposes:
+
+- **Application config** is the object you pass to the `Stratal` constructor. It tunes framework behaviour at boot: `versioning`, `trailingSlash`, `logging`, and the exception handler. The `trailingSlash` key accepts either a bare mode (`'ignore' | 'always' | 'never'`) or a `{ mode, exclude }` object that exempts specific paths from canonicalization.
+
+  ```typescript
+  export default new Stratal({
+    module: AppModule,
+    trailingSlash: { mode: 'always', exclude: ['/auth/oauth2'] },
+  })
+  ```
+
+- **Namespaced config** is everything described on the rest of this page: your application's own settings, derived from the Cloudflare `Env` object through `registerAs()` and read back through `ConfigService`.
+
+<Aside type="note">
+  Application config is static and read once at construction. Namespaced config supports schema validation and request-scoped runtime overrides. Reach for namespaced config for anything your application defines.
+</Aside>
+
+<LinkCard
+  title="Routing: trailing slashes and URL generation"
+  href="/core-concepts/controllers-and-routing/#trailing-slashes"
+  description="Full reference for the trailingSlash modes, exclusion patterns, and how generated URLs stay consistent with redirects."
+/>
+
 ## How it works
 
 Configuration flows through three steps:
 
-1. **Define** — create config namespaces with `registerAs()`, each receiving the `Env` object and returning a typed config object.
-2. **Register** — pass all namespaces to `ConfigModule.forRoot()` in your root or shared module. The module resolves the Cloudflare `Env`, calls each factory, optionally validates the merged result, and initializes `ConfigService`.
-3. **Use** — inject `ConfigService` anywhere and access values with dot-notation paths.
+1. **Define** - create config namespaces with `registerAs()`, each receiving the `Env` object and returning a typed config object.
+2. **Register** - pass all namespaces to `ConfigModule.forRoot()` in your root or shared module. The module resolves the Cloudflare `Env`, calls each factory, optionally validates the merged result, and initializes `ConfigService`.
+3. **Use** - inject `ConfigService` anywhere and access values with dot-notation paths.
 
 ```mermaid
 flowchart LR
@@ -101,7 +126,7 @@ export class CoreModule {}
 | `validateSchema` | `ZodSchema`         | No       | A Zod schema to validate the merged config at startup   |
 
 <Aside type="note">
-  Import `ConfigModule.forRoot()` once in your root module or a shared `CoreModule`. Child feature modules do not need to import it — they can inject `ConfigService` directly since it is registered in the global DI container.
+  Import `ConfigModule.forRoot()` once in your root module or a shared `CoreModule`. Child feature modules do not need to import it - they can inject `ConfigService` directly since it is registered in the global DI container.
 </Aside>
 
 ## Injecting and using ConfigService
@@ -166,7 +191,7 @@ declare module 'stratal' {
 }
 ```
 
-After this augmentation, `config.get('database.url')` is fully typed — your editor will autocomplete valid paths and flag invalid ones at compile time.
+After this augmentation, `config.get('database.url')` is fully typed - your editor will autocomplete valid paths and flag invalid ones at compile time.
 
 ## Schema validation
 
@@ -215,13 +240,13 @@ ConfigValidationError: Configuration validation failed
 Use `config.set()` to override config values during a request. This is useful for middleware that adjusts settings based on request context:
 
 ```typescript
-// In middleware — override for this request
+// In middleware - override for this request
 async handle(ctx: RouterContext, next: () => Promise<void>) {
   this.config.set('email.from.name', 'Custom Name')
   await next()
 }
 
-// In a downstream service — reflects the override
+// In a downstream service - reflects the override
 async sendEmail() {
   const fromName = this.config.get('email.from.name') // 'Custom Name'
 }
@@ -351,7 +376,7 @@ To add a new config namespace to your application:
    })
    ```
 
-4. **Set environment variables** — add to `.dev.vars.example` for local development and set in production via `wrangler secret put` (sensitive) or `wrangler.jsonc` (non-sensitive).
+4. **Set environment variables** - add to `.dev.vars.example` for local development and set in production via `wrangler secret put` (sensitive) or `wrangler.jsonc` (non-sensitive).
 
 ## Testing
 

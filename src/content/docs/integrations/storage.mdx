@@ -281,7 +281,42 @@ The `expiresIn` parameter is validated against the configured limits:
 - Maximum: the `presignedUrl.maxExpiry` value from your config (up to 604800 seconds / 7 days)
 - If omitted, `presignedUrl.defaultExpiry` is used
 
-A `PresignedUrlInvalidExpiryError` is thrown if the value falls outside the allowed range.
+## Auto-registered storage routes
+
+`StorageModule` mounts a hidden controller that proxies R2 operations behind signed URLs. The presigned-URL helpers return URLs that point at these routes:
+
+| Method | Route | Helper |
+| --- | --- | --- |
+| `GET` | `/storage/:disk/*` | `getPresignedDownloadUrl` |
+| `PUT` | `/storage/:disk/*` | `getPresignedUploadUrl` |
+| `DELETE` | `/storage/:disk/*` | `getPresignedDeleteUrl` |
+
+The `:disk` segment is the disk name and the `*` wildcard is the file path within that disk. These routes are hidden from your generated OpenAPI docs.
+
+### Customizing the routes
+
+Pass a `route` option to `StorageModule.forRoot()` to change the base path or opt out:
+
+```typescript
+StorageModule.forRoot({
+  // ...storage, defaultStorageDisk, presignedUrl
+  route: {
+    basePath: '/files',  // default: '/storage'
+    disabled: false,     // default: false
+  },
+})
+```
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `route.basePath` | `string` | `/storage` | Base path the storage routes are mounted under |
+| `route.disabled` | `boolean` | `false` | Skip auto-registration of the storage routes |
+
+When you set a custom `basePath`, the presigned URLs are generated against that path automatically.
+
+<Aside type="note">
+  Set `route: { disabled: true }` to skip auto-registration entirely, for example when you front R2 with your own controller. The presigned-URL helpers still build URLs against the configured `basePath`, so disable the routes only if you are serving those paths yourself.
+</Aside>
 
 ## Path template variables
 
@@ -297,33 +332,30 @@ For example, a root of `uploads/{year}/{month}` resolves to `uploads/2026/02`. T
 
 ## Error handling
 
-Storage operations throw specific error classes that extend `ApplicationError`. Each error includes contextual data (file path, disk name, etc.) and is automatically translated based on the request locale:
+Storage operations throw specific error classes. Each carries contextual data (such as the file path, MIME type, or size) and maps to an HTTP status, so the global error handler can translate it into the right response:
 
-| Error class | When thrown |
-| --- | --- |
-| `FileNotFoundError` | File does not exist |
-| `InvalidDiskError` | Specified disk not found in configuration |
-| `DiskNotConfiguredError` | Disk configuration is missing or incomplete |
-| `StorageProviderNotSupportedError` | Provider type is not implemented |
-| `PresignedUrlInvalidExpiryError` | Presigned URL expiry is outside the 1s–7d range |
-| `InvalidFileTypeError` | File type is not allowed |
-| `FileTooLargeError` | File exceeds the configured size limit |
+| Error class | Status | When thrown |
+| --- | --- | --- |
+| `StorageError` | varies | Base class for storage errors; extends `ApplicationError` |
+| `FileNotFoundError` | 404 | The requested file does not exist |
+| `FileTooLargeError` | 413 | The file exceeds the allowed size |
+| `InvalidFileTypeError` | 422 | The file MIME type is not allowed |
 
 ```typescript
 import {
   FileNotFoundError,
-  InvalidDiskError,
-  PresignedUrlInvalidExpiryError,
+  FileTooLargeError,
+  InvalidFileTypeError,
 } from 'stratal/storage'
 
 try {
   const file = await this.storage.download('docs/missing.pdf')
 } catch (error) {
   if (error instanceof FileNotFoundError) {
-    // File does not exist — return 404
+    // File does not exist - return 404
   }
-  if (error instanceof InvalidDiskError) {
-    // Disk name is invalid — check configuration
+  if (error instanceof InvalidFileTypeError) {
+    // The MIME type is not allowed - reject the upload
   }
 }
 ```
@@ -455,7 +487,7 @@ const result = await this.storage.deleteObjects([
 - **Minimize disk switching.** Design your disk layout so most operations use the default disk. Pass an explicit disk name only when you need a different bucket or visibility.
 - **Use presigned URLs for client uploads.** Generate presigned upload URLs instead of proxying file uploads through your API. This offloads bandwidth to the storage provider.
 - **Keep expiry times short.** Use the shortest practical presigned URL expiry. The default of 1 hour is reasonable for most use cases.
-- **Handle errors gracefully.** Always catch storage errors — a file might not exist, the disk might be misconfigured, or the network might be unreachable.
+- **Handle errors gracefully.** Always catch storage errors - a file might not exist, the disk might be misconfigured, or the network might be unreachable.
 - **Separate environments.** Use different buckets or disks for development, staging, and production to prevent accidental data overlap.
 - **Use independent credentials.** Each disk should have its own access credentials with the minimum required permissions.
 

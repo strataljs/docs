@@ -1,88 +1,129 @@
 ---
 title: Vite Plugin
-description: Configure Vite for Inertia with automatic page type generation and development CSS handling.
+description: Configure Vite for Inertia with automatic page type generation, manifest inlining, and SEO head-sync.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-The `@stratal/inertia/vite` package provides a Vite plugin that handles TypeScript type generation for page components and CSS injection during SSR development.
+The `@stratal/inertia/vite` package provides the `stratalInertia()` plugin, which handles TypeScript type generation for page components, CSS injection during SSR development, client-side SEO head sync, and inlining the client manifest into the worker bundle.
 
 ## Basic setup
 
-Add the `stratalInertia()` plugin to your Vite configuration:
+`stratalInertia()` returns an **array** of plugins, so spread it into your `plugins` list:
 
 ```typescript
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { cloudflare } from '@cloudflare/vite-plugin'
 import { stratalInertia } from '@stratal/inertia/vite'
 
 export default defineConfig({
   plugins: [
-    react(),
-    stratalInertia(),
+    cloudflare(),
+    ...stratalInertia(),
   ],
 })
 ```
 
 <Aside type="tip">
-When using `npx inertia dev`, a Vite config is auto-generated. You only need a custom `vite.config.ts` if you need additional Vite plugins or custom configuration.
+When you run `npx quarry inertia:dev` or `npx quarry inertia:build`, a Vite config is generated for you with `stratalInertia()` and the Cloudflare plugin pre-wired. You only need your own `vite.config.ts` when you want extra Vite plugins or custom configuration.
 </Aside>
 
 ## What it includes
 
-The `stratalInertia()` plugin bundles two sub-plugins:
+The `stratalInertia()` plugin bundles several sub-plugins:
 
 | Sub-plugin | Purpose |
 | --- | --- |
-| `stratalInertiaTypes` | Automatically regenerates TypeScript types for your page components whenever a file changes during HMR. This keeps the `InertiaPageRegistry` type in sync with your pages directory. |
-| `stratalInertiaDevCss` | Handles CSS injection during development when using server-side rendering. Ensures styles are applied correctly before hydration. |
+| `stratalInertiaTypes` | Regenerates the `InertiaPageRegistry` types from your `ctx.inertia()` calls and page components on build and during HMR. |
+| `stratalInertiaDevCss` | Injects CSS during development so styles are applied correctly before hydration when SSR is active. |
+| SEO runtime injector | Prepends the `@stratal/inertia/seo-runtime` side-effect import to your client entry so backend `ctx.seo()` metadata stays in sync across Inertia navigations. No app wiring required. |
+| Manifest injector | During the worker build, inlines the client Vite manifest onto the worker entry chunk so `ManifestService` can resolve hashed asset URLs at runtime (Workers have no filesystem). |
 
-Both sub-plugins are included by default and require no separate configuration.
+These run automatically and require no separate configuration.
 
 ## Plugin options
 
-You can customize the plugin by passing an options object:
-
 ```typescript
 stratalInertia({
-  entries: ['src/inertia/app.tsx'],  // Client entry paths (default)
+  entries: ['/src/inertia/app.tsx'],
+  sourcemap: 'dev-and-staging',
+  clientManifestPath: 'dist/client/.vite/manifest.json',
 })
 ```
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `entries` | `string[]` | `['src/inertia/app.tsx']` | Paths to the client entry files. Adjust this if your entry point is in a different location. |
+| `entries` | `string[]` | `['/src/inertia/app.tsx']` | Client entry paths used for CSS collection and SEO-runtime injection. Adjust if your entry lives elsewhere. |
+| `sourcemap` | `boolean \| 'dev-and-staging'` | `'dev-and-staging'` | Whether to emit sourcemaps in `vite build`. `'dev-and-staging'` emits them unless `CLOUDFLARE_ENV` is `prod` or `production`, keeping production worker uploads small. |
+| `clientManifestPath` | `string` | `'dist/client/.vite/manifest.json'` | Path (relative to project root) to the client manifest produced by the browser-bundle build phase. The worker build inlines it onto the worker entry chunk. |
 
-## Using with `npx inertia dev`
+<Aside type="note">
+  A per-app `build.sourcemap` set in your own `vite.config.ts` always wins over the plugin's `sourcemap` option.
+</Aside>
 
-The recommended way to develop Inertia applications is with the `@stratal/inertia` CLI:
+## Using `npx quarry inertia:dev`
+
+The recommended way to develop Inertia applications is with the Inertia CLI:
 
 ```bash
-npx inertia dev
+npx quarry inertia:dev
 ```
 
-This command starts the Vite development server with the Stratal Inertia plugins pre-configured. HMR, type generation, and CSS handling all work out of the box without a `vite.config.ts` file.
+This starts the Vite dev server with the Stratal Inertia plugins and the Cloudflare plugin pre-configured. HMR, type generation, CSS handling, and SEO head sync all work out of the box without a `vite.config.ts` file.
+
+Common flags:
+
+```bash
+npx quarry inertia:dev --port=5173 --host --persist-to=.cf-state
+```
 
 ## Manual Vite config for advanced setups
 
-If you need additional Vite plugins or custom configuration beyond what `npx inertia dev` provides, create a `vite.config.ts` in your project root:
+If you need additional Vite plugins or custom configuration, create a `vite.config.ts` in your project root. When one is present, both `inertia:dev` and `inertia:build` merge it with the generated base config:
+
+<Tabs>
+<TabItem label="With Tailwind">
 
 ```typescript
 import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+import { cloudflare } from '@cloudflare/vite-plugin'
 import { stratalInertia } from '@stratal/inertia/vite'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [
-    react(),
+    cloudflare(),
     tailwindcss(),
-    stratalInertia(),
+    ...stratalInertia(),
   ],
-  build: {
-    outDir: 'dist',
-  },
 })
 ```
 
-When a `vite.config.ts` is present, both `npx inertia dev` and `npx inertia build` will use it instead of the auto-generated configuration.
+</TabItem>
+<TabItem label="Custom entry">
+
+```typescript
+import { defineConfig } from 'vite'
+import { cloudflare } from '@cloudflare/vite-plugin'
+import { stratalInertia } from '@stratal/inertia/vite'
+
+export default defineConfig({
+  plugins: [
+    cloudflare(),
+    ...stratalInertia({
+      entries: ['/src/inertia/main.tsx'],
+    }),
+  ],
+})
+```
+
+</TabItem>
+</Tabs>
+
+## Production build
+
+```bash
+npx quarry inertia:build
+```
+
+The build runs in two phases: it builds the browser bundle and its manifest first, then builds the worker, inlining that manifest so the deployed Worker can resolve hashed asset URLs without a filesystem. Add `--ssr` to include the streaming SSR bundle.

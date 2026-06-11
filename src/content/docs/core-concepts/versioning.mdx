@@ -12,7 +12,6 @@ Stratal supports URI-based API versioning. When enabled, controller routes are a
 Pass a `versioning` option to the `Stratal` constructor:
 
 ```typescript
-import 'reflect-metadata'
 import { Stratal } from 'stratal'
 import { AppModule } from './app.module'
 
@@ -129,33 +128,29 @@ A controller at `/users` with version `'1'` now registers at `/api/v1/users` ins
 
 ## Middleware with versioning
 
-When targeting specific routes in middleware configuration, you can use the `version` field in route info objects to match versioned paths:
+To scope middleware to a specific version, group the relevant controllers and set the version on the group with `version()`:
 
 ```typescript
 import { Module } from 'stratal/module'
-import { MiddlewareConfigurable, MiddlewareConsumer } from 'stratal/middleware'
+import type { RouteConfigurable } from 'stratal/router'
+import { Router } from 'stratal/router'
 import { AuthMiddleware } from './auth.middleware'
 
 @Module({
   controllers: [UsersV1Controller, UsersV2Controller],
   providers: [AuthMiddleware],
 })
-export class UsersModule implements MiddlewareConfigurable {
-  configure(consumer: MiddlewareConsumer) {
-    // Apply only to v1 users routes
-    consumer
-      .apply(AuthMiddleware)
-      .forRoutes({ path: '/api/users', version: '1' })
-
-    // Apply to multiple versions
-    consumer
-      .apply(AuthMiddleware)
-      .forRoutes({ path: '/api/users', version: ['1', '2'] })
+export class UsersModule implements RouteConfigurable {
+  configureRoutes(router: Router): void {
+    // Apply only to the v1 users controller
+    router.group([UsersV1Controller], (v1) => {
+      v1.version('1').middleware(AuthMiddleware)
+    })
   }
 }
 ```
 
-Stratal resolves the version and prefix automatically — `{ path: '/api/users', version: '1' }` expands to match `/v1/api/users` and its sub-paths.
+Stratal resolves the version and prefix automatically, so `version('1')` matches `/v1/api/users` and its sub-paths.
 
 ## Reference
 
@@ -166,7 +161,7 @@ Passed to `ApplicationConfig.versioning`:
 | Option           | Type                   | Default | Description                                                  |
 | ---------------- | ---------------------- | ------- | ------------------------------------------------------------ |
 | `prefix`         | `string`               | `'v'`   | Prefix for version segments (e.g., `'v'` → `/v1`, `'api/v'` → `/api/v1`) |
-| `defaultVersion` | `string \| string[]`   | —       | Version applied to controllers without an explicit `version` |
+| `defaultVersion` | `string \| string[]`   | -       | Version applied to controllers without an explicit `version` |
 
 ### ControllerOptions.version
 
@@ -174,9 +169,11 @@ Passed to `ApplicationConfig.versioning`:
 | -------------------------------------------- | ------------------------------------------------------ |
 | `string`                                     | Single version (e.g., `'1'` → `/v1/...`)              |
 | `string[]`                                   | Multiple versions (e.g., `['1', '2']`)                 |
-| `typeof VERSION_NEUTRAL`                     | Opt out of versioning — no prefix applied              |
+| `typeof VERSION_NEUTRAL`                     | Opt out of versioning - no prefix applied              |
 
-### RouteInfo.version (middleware)
+### Router.version() (middleware)
+
+Set on a `Router` scope or a `group()` to target versioned routes when configuring middleware:
 
 | Type                   | Description                                                      |
 | ---------------------- | ---------------------------------------------------------------- |

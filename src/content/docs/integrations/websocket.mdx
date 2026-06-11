@@ -40,7 +40,7 @@ Decorate methods with event decorators to handle WebSocket lifecycle events:
 | `@OnClose()` | `(evt: CloseEvent, ctx: GatewayContext)` | Called when the connection closes |
 | `@OnError()` | `(evt: Event, ctx: GatewayContext)` | Called when a WebSocket error occurs |
 
-Each gateway can have at most one handler per event type. All three are optional — define only the ones you need.
+Each gateway can have at most one handler per event type. All three are optional - define only the ones you need.
 
 ```typescript
 @Gateway('/ws/chat')
@@ -64,7 +64,7 @@ class ChatGateway {
 ```
 
 <Aside type="note">
-  There is no `@OnOpen()` decorator. Cloudflare Workers do not fire an `open` event on server-side WebSockets — the connection is ready as soon as the upgrade completes. Place any initialization logic in your `@OnMessage()` handler or the gateway constructor.
+  There is no `@OnOpen()` decorator. Cloudflare Workers do not fire an `open` event on server-side WebSockets - the connection is ready as soon as the upgrade completes. Place any initialization logic in your `@OnMessage()` handler or the gateway constructor.
 </Aside>
 
 ## GatewayContext
@@ -116,7 +116,7 @@ export class ChatModule {}
 ```
 
 <Aside type="caution">
-  Do not apply both `@Gateway()` and `@Controller()` to the same class. Each class should be one or the other — they use different routing mechanisms despite sharing the `controllers` array.
+  Do not apply both `@Gateway()` and `@Controller()` to the same class. Each class should be one or the other - they use different routing mechanisms despite sharing the `controllers` array.
 </Aside>
 
 ## Guards
@@ -124,7 +124,7 @@ export class ChatModule {}
 `@UseGuards()` works on gateways the same way it works on controllers. Guards execute during the HTTP upgrade request, before the WebSocket connection is established:
 
 ```typescript
-import { UseGuards } from 'stratal/router'
+import { UseGuards } from 'stratal/guards'
 import { AuthGuard } from './auth.guard'
 
 @UseGuards(AuthGuard)
@@ -150,7 +150,7 @@ class ChatGatewayV1 {
 }
 ```
 
-The `version` option accepts a `string`, `string[]` for multiple versions, or `VERSION_NEUTRAL` to opt out of versioning — identical to the `@Controller()` pattern. See [API Versioning](/core-concepts/versioning/) for full details.
+The `version` option accepts a `string`, `string[]` for multiple versions, or `VERSION_NEUTRAL` to opt out of versioning - identical to the `@Controller()` pattern. See [API Versioning](/core-concepts/versioning/) for full details.
 
 ## Next steps
 

@@ -1,11 +1,11 @@
 ---
 title: Modals
-description: Backend-driven modal pages with @stratal/inertia-modal — render a modal over a background page from a single controller method.
+description: Backend-driven modal pages with @stratal/inertia-modal. Render a modal over a background page from a single controller method.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-`@stratal/inertia-modal` lets a single Inertia route render a modal *over* another page. The address bar shows the modal URL; the user can refresh, share, or hit back without breaking the experience. There is no client-side modal state to wire up — the server decides what's a modal and what isn't.
+`@stratal/inertia-modal` lets a single Inertia route render a modal *over* another page. The address bar shows the modal URL; the user can refresh, share, or hit back without breaking the experience. There is no client-side modal state to wire up: the server decides what's a modal and what isn't.
 
 When the user opens a modal, Stratal fetches the background page in-process, embeds the modal component and props in the response, and the client-side `<Modal />` component renders the overlay. Closing the modal navigates back to the background URL.
 
@@ -17,7 +17,7 @@ yarn add @stratal/inertia-modal
 
 ## Server setup
 
-Add `ModalModule` to your application's imports. It registers the modal service and adds an `inertiaModal()` method to `RouterContext`.
+Add `ModalModule` to your application's imports. It depends on `InertiaModule` (already in your imports), registers the modal service, adds an `inertiaModal()` method to `RouterContext`, and registers its own i18n message namespace.
 
 ```typescript
 import { Module } from 'stratal/module'
@@ -156,7 +156,7 @@ export default function EditModal() {
 | --- | --- | --- |
 | `show` | `boolean` | `true` when a modal is currently active on this page. |
 | `props` | `Record<string, unknown> \| undefined` | The props passed from `ctx.inertiaModal()`. |
-| `redirect()` | `() => void` | Navigate back to the page that opened the modal (or `baseURL` on direct visits). |
+| `redirect()` | `() => void` | Navigate back to the page that opened the modal (or `baseURL` on direct visits). On a partial reload of the modal it uses `history.back()` instead of a server round-trip. |
 
 ## Handling form submissions
 
@@ -171,10 +171,26 @@ async update(ctx: RouterContext) {
 }
 ```
 
+## Refreshing just the modal
+
+The modal data is exposed under a prop named `modal`. To re-fetch only the modal (for example a cascading select that re-queries server data) without reloading the background page, use Inertia's partial reload:
+
+```tsx
+import { router } from '@inertiajs/react'
+
+router.reload({ only: ['modal'] })
+```
+
+The server short-circuits the background sub-request in this case and returns only the fresh modal prop. Because the client already has the background page mounted, closing the modal afterwards uses `history.back()` rather than a server round-trip.
+
 ## Errors
 
 | Error | HTTP status | When |
 | --- | --- | --- |
-| `ModalBackgroundFetchError` | 502 | The background page configured in `baseURL` could not be fetched (e.g. the route returned a 4xx/5xx). |
+| `ModalBackgroundFetchError` | 502 | The background page at `baseURL` could not be fetched: the sub-request returned a non-2xx status or an empty body. |
 
-Make sure the page at `baseURL` is reachable for the same authenticated user that hit the modal route — modals run an internal sub-request that forwards the original cookies and host header.
+Catch `ModalBackgroundFetchError` (imported from `@stratal/inertia-modal`) in your global `ExceptionHandler` to render a friendly fallback.
+
+<Aside type="caution">
+  Make sure the page at `baseURL` is reachable for the same authenticated user that hit the modal route. Modals run an internal sub-request that forwards the original request's cookies, host header, and forwarded-proto/host headers so authentication and domain-pattern middleware resolve identically.
+</Aside>

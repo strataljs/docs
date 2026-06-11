@@ -55,10 +55,10 @@ InertiaModule.forRoot({
 You can also share data from within a controller or middleware using `InertiaService.share()`:
 
 ```typescript
-import { Injectable } from 'stratal/di'
+import { Transient } from 'stratal/di'
 import { InertiaService } from '@stratal/inertia'
 
-@Injectable()
+@Transient()
 export class NotificationsMiddleware {
   constructor(private readonly inertia: InertiaService) {}
 
@@ -101,7 +101,7 @@ index(ctx: RouterContext) {
       return await this.notificationService.getRecent()
     }),
 
-    // Grouped — these two load in one request
+    // Grouped - these two load in one request
     stats: ctx.defer(async () => {
       return await this.statsService.getSummary()
     }, 'sidebar'),
@@ -227,12 +227,10 @@ Here is a controller that combines multiple prop types:
 ```typescript
 import { Controller, IController, RouterContext } from 'stratal/router'
 import { InertiaRoute } from '@stratal/inertia'
-import { Injectable } from 'stratal/di'
 import { PostService } from './post.service'
 import { CommentService } from './comment.service'
 import { AnalyticsService } from './analytics.service'
 
-@Injectable()
 @Controller('/posts')
 export class PostsController implements IController {
   constructor(
@@ -246,20 +244,20 @@ export class PostsController implements IController {
     const page = Number(ctx.req.query('page') ?? '1')
 
     return ctx.inertia('Posts/Index', {
-      // Standard prop — sent immediately
+      // Standard prop - sent immediately
       filters: { page, search: ctx.req.query('search') ?? '' },
 
-      // Merge prop — appends to existing list on pagination
+      // Merge prop - appends to existing list on pagination
       posts: ctx.merge(async () => {
         return await this.posts.paginate(page)
       }),
 
-      // Deferred — loaded after initial render
+      // Deferred - loaded after initial render
       trendingTags: ctx.defer(async () => {
         return await this.posts.getTrendingTags()
       }),
 
-      // Once — cached after first load
+      // Once - cached after first load
       categories: ctx.once(async () => {
         return await this.posts.getCategories()
       }),
@@ -278,7 +276,7 @@ export class PostsController implements IController {
         return await this.analytics.getViewCount(id)
       }),
 
-      // Optional — only loaded when requested
+      // Optional - only loaded when requested
       comments: ctx.optional(async () => {
         return await this.comments.getForPost(id)
       }),
@@ -289,5 +287,5 @@ export class PostsController implements IController {
 
 ## Next steps
 
-- [Pages & Rendering](/inertia/pages-and-rendering/) — Learn about rendering pages and route decorators.
-- [Overview & Setup](/inertia/overview/) — Review the module configuration and template placeholders.
+- [Pages & Rendering](/inertia/pages-and-rendering/) - Learn about rendering pages and route decorators.
+- [Overview & Setup](/inertia/overview/) - Review the module configuration and template placeholders.

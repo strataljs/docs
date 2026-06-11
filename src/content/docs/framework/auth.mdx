@@ -3,7 +3,7 @@ title: Auth
 description: Authentication with Better Auth, session management, and request-scoped auth context.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, Badge } from '@astrojs/starlight/components';
 
 `@stratal/framework` integrates with [Better Auth](https://www.better-auth.com/) to provide authentication, session management, and a request-scoped `AuthContext` for accessing the authenticated user throughout your application.
 
@@ -96,7 +96,7 @@ export class ProfileService {
 | `requireUserId()` | `string` | The authenticated user's ID. Throws if not authenticated |
 | `getRole()` | `string \| undefined` | Raw role string from `user.role` (comma-separated for multiple roles) |
 | `getRoles()` | `string[]` | Roles parsed into an array. Returns `[]` when the user has no role |
-| `getAuthInfo()` | `AuthInfo` | The full authentication context object. Throws `ContextNotInitializedError` if not initialised |
+| `getAuthInfo()` | `AuthInfo` | The full authentication context object (`{ user }`). Throws `AuthError` if no user is authenticated |
 | `clearAuthContext()` | `void` | Clears the authentication state |
 
 ### Augmenting AuthUser
@@ -145,10 +145,64 @@ The `auth` property returns the configured Better Auth instance with full access
 
 The `AuthModule` automatically registers two middleware components:
 
-1. **AuthContextMiddleware** — Creates an `AuthContext` instance in the request-scoped container for every request.
-2. **SessionVerificationMiddleware** — Verifies the session token from the request and populates `AuthContext` with the authenticated user's information.
+1. **AuthContextMiddleware**: Creates an `AuthContext` instance in the request-scoped container for every request.
+2. **SessionVerificationMiddleware**: Verifies the session token from the request and populates `AuthContext` with the authenticated user's information.
 
 These middleware run before your controller methods, so `AuthContext` is always available and populated when your code executes.
+
+## Auth errors
+
+`AuthModule` translates Better Auth's API errors into typed `HttpException` subclasses from `@stratal/framework/auth`. Stratal's global error handler renders each one as a localised JSON response carrying the status code listed below, so you never have to inspect raw Better Auth error codes in your controllers.
+
+### Fresh-session requirement
+
+Sensitive operations (for example deleting an account, changing a password, or revoking sessions) require a session that was authenticated recently. When the current session is older than Better Auth's configured freshness window, the operation fails with a `FreshSessionRequiredError`.
+
+| Error | HTTP status |
+| --- | --- |
+| `FreshSessionRequiredError` | <Badge text="403" variant="caution" /> |
+
+<Aside type="caution" title="Re-authenticate to recover">
+  A `FreshSessionRequiredError` (HTTP 403) means the user is signed in, but their session is not fresh enough for the requested action. The client should prompt the user to re-authenticate (sign in again, or re-enter their password), then retry the operation against the freshly issued session. It is not an authorization failure, so do not treat it the same as `InsufficientPermissionsError`.
+</Aside>
+
+### Full error reference
+
+Every error below extends `HttpException` and is thrown when the corresponding Better Auth condition occurs during a request handled by your auth controller.
+
+| Error | HTTP status | When |
+| --- | --- | --- |
+| `InvalidCredentialsError` | <Badge text="401" variant="danger" /> | Email and password combination is invalid |
+| `InvalidPasswordError` | <Badge text="401" variant="danger" /> | Supplied password is incorrect |
+| `SessionExpiredError` | <Badge text="401" variant="danger" /> | The session has expired |
+| `TokenExpiredError` | <Badge text="401" variant="danger" /> | A verification or reset token has expired |
+| `InvalidTokenError` | <Badge text="401" variant="danger" /> | A verification or reset token is invalid or has been used too many times |
+| `TokenRequiredError` | <Badge text="401" variant="danger" /> | A verification token is required but was not provided |
+| `FreshSessionRequiredError` | <Badge text="403" variant="caution" /> | The session is not fresh enough for a sensitive operation |
+| `EmailNotVerifiedError` | <Badge text="403" variant="caution" /> | The account's email address has not been verified |
+| `InvalidOriginError` | <Badge text="403" variant="caution" /> | The request origin is not allowed |
+| `UserNotFoundError` | <Badge text="404" variant="default" /> | No user matches the request |
+| `UserEmailNotFoundError` | <Badge text="404" variant="default" /> | The user has no email on record |
+| `AccountNotFoundError` | <Badge text="404" variant="default" /> | No linked account matches the request |
+| `CredentialAccountNotFoundError` | <Badge text="404" variant="default" /> | No password (credential) account exists for the user |
+| `ProviderNotFoundError` | <Badge text="404" variant="default" /> | The requested social provider is not configured |
+| `AccountAlreadyExistsError` | <Badge text="409" variant="default" /> | An account already exists for the email |
+| `SocialAccountLinkedError` | <Badge text="409" variant="default" /> | The social account is already linked to a user |
+| `CannotUnlinkLastAccountError` | <Badge text="409" variant="default" /> | The user's last remaining account cannot be unlinked |
+| `UserAlreadyHasPasswordError` | <Badge text="409" variant="default" /> | The user already has a password set |
+| `EmailAlreadyVerifiedError` | <Badge text="409" variant="default" /> | The email address is already verified |
+| `InvalidEmailError` | <Badge text="422" variant="default" /> | The email address is malformed |
+| `PasswordTooShortError` | <Badge text="422" variant="default" /> | The password is shorter than the minimum length |
+| `PasswordTooLongError` | <Badge text="422" variant="default" /> | The password exceeds the maximum length |
+| `EmailCannotBeUpdatedError` | <Badge text="422" variant="default" /> | The email address cannot be changed |
+| `EmailMismatchError` | <Badge text="422" variant="default" /> | The supplied email does not match the expected one |
+| `IdTokenNotSupportedError` | <Badge text="422" variant="default" /> | The provider does not support ID-token sign-in |
+| `InvalidCallbackUrlError` | <Badge text="422" variant="default" /> | A callback or redirect URL is not allowed |
+| `AuthValidationFailedError` | <Badge text="422" variant="default" /> | The request failed Better Auth's field validation |
+
+<Aside type="tip">
+  Import any of these classes from `@stratal/framework/auth` to catch them explicitly (for example to add custom logging) before they reach the global error handler. For authentication and permission failures raised by guards, see [Auth Guard](/framework/auth-guard/).
+</Aside>
 
 ## Next steps
 

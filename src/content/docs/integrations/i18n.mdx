@@ -1,147 +1,172 @@
 ---
 title: Internationalization
-description: Built-in i18n with automatic locale detection, type-safe translations, parameter interpolation, and Zod validation error translation.
+description: Built-in i18n with configurable locale detection, per-module keyed message namespaces, ICU MessageFormat interpolation, type-safe keys, and automatic validation error translation.
 ---
 
-import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem, Steps, LinkCard } from '@astrojs/starlight/components';
 
-Stratal includes a built-in internationalization (i18n) module that provides locale detection, type-safe translation keys, parameter interpolation, and automatic translation of validation errors. The module is loaded automatically as part of the framework core, so system messages like error responses are translated out of the box.
+Stratal includes a built-in internationalization (i18n) module that provides locale detection, type-safe translation keys, ICU MessageFormat interpolation, and automatic translation of validation errors. Messages are registered per module under a keyed namespace, so any feature module or package can ship its own translations.
 
-## Default behavior
+## Setup
 
-The `I18nModule` is auto-loaded by Stratal. Without any configuration, it:
-
-- Detects the request locale from the `X-Locale` header
-- Falls back to `en` when the header is missing or unsupported
-- Translates all built-in system messages (error responses, validation errors) in English
-- Makes `I18nService` available for injection throughout your application
-
-You do not need to import the module for basic i18n support to work.
-
-## Configuration
-
-To support additional locales, call `I18nModule.forRoot()` in your root module. This method accepts locale configuration only — it does not accept messages.
+The `I18nModule` exposes two static methods. `forRoot()` configures locale settings. `registerMessages()` adds translations and can be called from any module.
 
 ```typescript
 import { Module } from 'stratal/module'
 import { I18nModule } from 'stratal/i18n'
 
 @Module({
-  imports: [I18nModule.forRoot({ defaultLocale: 'en', fallbackLocale: 'en', locales: ['en', 'fr'] })],
+  imports: [
+    I18nModule.forRoot({
+      defaultLocale: 'en',
+      fallbackLocale: 'en',
+      locales: ['en', 'fr'],
+    }),
+    I18nModule.registerMessages({
+      en: {
+        notes: {
+          errors: { notFound: 'Note {noteId} not found' },
+          validation: { title: { required: 'Title is required' } },
+        },
+      },
+      fr: {
+        notes: { errors: { notFound: 'Note {noteId} introuvable' } },
+      },
+    }),
+  ],
 })
 export class AppModule {}
 ```
+
+`forRoot()` accepts locale configuration only, never messages. Keeping the two separate is what lets a module register its translations without owning the root locale config.
 
 ### I18nModuleOptions
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `defaultLocale` | `string` | `'en'` | Locale used when no `X-Locale` header is present |
-| `fallbackLocale` | `string` | `'en'` | Locale used when a translation key is missing in the requested locale |
-| `locales` | `string[]` | `['en']` | List of supported locales |
+| `defaultLocale` | `string` | `'en'` | Locale used when detection finds nothing usable |
+| `fallbackLocale` | `string` | `'en'` | Locale used when a key is missing in the requested locale |
+| `locales` | `string[]` | `['en']` | Supported locales. Requests for any locale outside this list fall back to `defaultLocale` |
+| `detection` | `LanguageDetectionOptions` | `{ strategy: 'cookie' }` | How the request locale is resolved |
 
-## Registering messages
+## Per-module keyed namespaces
 
-Use `I18nModule.registerMessages()` to add translations. This is separate from `forRoot()` so that any module — not just the root module — can contribute its own messages.
+Messages live in a keyed registry. **Each module owns exactly one distinct top-level namespace** (for example `notes`, `billing`, `uploads`) and nests its keys underneath it. Any module can call `registerMessages()`, and contributions are deep-merged across every registration. Later registrations override earlier ones at the leaf level.
 
 ```typescript
+// src/modules/billing/billing.module.ts
 import { Module } from 'stratal/module'
 import { I18nModule } from 'stratal/i18n'
-import * as en from './messages/en'
-import * as fr from './messages/fr'
+import { billingMessages } from './i18n/en'
 
-@Module({
-  imports: [I18nModule.registerMessages({ en, fr })],
-})
-export class AppModule {}
-```
-
-You can call `registerMessages()` as many times as needed, from any module in your application. Each call deep-merges the provided messages with the existing set. If two calls define the same leaf key, the later call wins.
-
-```typescript
-// Root module registers app-wide messages
-@Module({
-  imports: [
-    I18nModule.forRoot({ defaultLocale: 'en', locales: ['en', 'fr'] }),
-    I18nModule.registerMessages({
-      en: { common: { welcome: 'Welcome' } },
-      fr: { common: { welcome: 'Bienvenue' } },
-    }),
-    PaymentsModule,
-  ],
-})
-export class AppModule {}
-
-// PaymentsModule registers its own messages
 @Module({
   imports: [
     I18nModule.registerMessages({
-      en: { payments: { receiptSent: 'Receipt sent to {email}' } },
-      fr: { payments: { receiptSent: 'Reçu envoyé à {email}' } },
+      en: { billing: billingMessages.en },
+      fr: { billing: { errors: { subscriptionNotFound: 'Abonnement introuvable' } } },
     }),
   ],
 })
-export class PaymentsModule {}
+export class BillingModule {}
 ```
 
-This makes it easy for packages and feature modules to ship their own translations without requiring the root module to know about them.
+Access keys with flat dot-notation: `i18n.t('billing.errors.subscriptionNotFound')`.
+
+<Aside type="caution">
+  A module must own exactly **one** top-level key on the namespace registry. Two modules cannot augment the same top-level key with different shapes: TypeScript's interface merging requires same-named properties across declarations to be structurally identical, so sharing a parent namespace (`errors`, etc.) between modules produces a **TS2717** collision. Pick a distinct top-level key for every module and nest everything underneath it.
+</Aside>
+
+### Reserved namespaces
+
+The top-level namespaces `common`, `emails`, `validation`, and `zodI18n` are owned by core. You may register additional locale translations for these keys, but you cannot augment their type shapes. Choose a different top-level namespace for your modules.
 
 ## Defining messages
 
-Messages are nested objects. Each key path becomes a dot-notation translation key:
+Messages are nested objects. Each leaf path becomes a dot-notation translation key. Colocate them with the module, commonly with the type augmentation in the same file.
 
 <Tabs>
-  <TabItem label="messages/en.ts">
+  <TabItem label="i18n/en.ts">
 ```typescript
-export const common = {
-  welcome: 'Welcome',
-  greeting: 'Hello, {name}!',
-}
+export const billingMessages = {
+  en: {
+    errors: { subscriptionNotFound: 'Subscription not found' },
+    invoices: { issued: 'Invoice {number} issued' },
+  },
+} as const
 
-export const users = {
-  created: 'User {email} has been created.',
-  deleted: 'User account deleted successfully.',
+declare module 'stratal/i18n' {
+  interface AppMessageNamespaces {
+    billing: typeof billingMessages['en']
+  }
 }
 ```
-</TabItem>
+  </TabItem>
 
-<TabItem label="messages/fr.ts">
+  <TabItem label="i18n/fr.ts">
 ```typescript
-export const common = {
-  welcome: 'Bienvenue',
-  greeting: 'Bonjour, {name} !',
-}
-
-export const users = {
-  created: "L'utilisateur {email} a été créé.",
-  deleted: 'Compte utilisateur supprimé avec succès.',
-}
+export const billingMessagesFr = {
+  fr: {
+    errors: { subscriptionNotFound: 'Abonnement introuvable' },
+    invoices: { issued: 'Facture {number} émise' },
+  },
+} as const
 ```
-</TabItem>
+  </TabItem>
 </Tabs>
 
-All registered messages are deep-merged with the built-in system messages. If you define a key that already exists in the system messages, your value takes precedence.
+Augmenting `AppMessageNamespaces` is what makes `i18n.t('billing.invoices.issued')` fully type-checked.
+
+## ICU MessageFormat
+
+Messages are compiled with [intl-messageformat](https://formatjs.io/docs/intl-messageformat/), so they support the full ICU MessageFormat syntax. Simple `{name}` placeholders interpolate the matching parameter:
+
+```typescript
+// Message: 'Hello, {name}!'
+i18n.t('common.greeting', { name: 'Alice' })
+// => 'Hello, Alice!'
+```
+
+Use ICU `plural` and `select` arguments for grammatically correct output:
+
+```typescript
+// Message:
+// '{count, plural, =0 {No notifications} one {# notification} other {# notifications}}'
+i18n.t('common.notifications', { count: 0 })  // => 'No notifications'
+i18n.t('common.notifications', { count: 1 })  // => '1 notification'
+i18n.t('common.notifications', { count: 5 })  // => '5 notifications'
+
+// Message:
+// '{gender, select, female {She replied} male {He replied} other {They replied}}'
+i18n.t('common.reply', { gender: 'female' })  // => 'She replied'
+```
+
+Inside a `plural` or `selectordinal` block, `#` renders the count formatted for the active locale. The locale also drives `number`, `date`, and `time` formats:
+
+```typescript
+// Message: 'Total: {amount, number, ::currency/USD}'
+// Message: 'Created {when, date, medium}'
+```
+
+<Aside type="tip">
+  The compiler uses intl-messageformat's AST formatting, which avoids `eval` and `new Function`. That keeps it compatible with Cloudflare Workers' Content Security Policy. No manual setup is required.
+</Aside>
 
 ## Using translations
 
-Inject `I18nService` and call `t()` with a message key:
+Inject `I18nService` and call `t()` with a key:
 
 ```typescript
 import { Transient, inject } from 'stratal/di'
 import { I18N_TOKENS, type II18nService } from 'stratal/i18n'
 
 @Transient()
-export class GreetingService {
+export class BillingService {
   constructor(
     @inject(I18N_TOKENS.I18nService) private readonly i18n: II18nService,
   ) {}
 
-  getWelcome() {
-    return this.i18n.t('common.welcome')
-  }
-
-  getGreeting(name: string) {
-    return this.i18n.t('common.greeting', { name })
+  getInvoiceMessage(number: string) {
+    return this.i18n.t('billing.invoices.issued', { number })
   }
 }
 ```
@@ -152,113 +177,153 @@ The `t` method signature:
 t(key: MessageKeys, params?: MessageParams): string
 ```
 
-- `key` is a type-safe union of all system and application message keys (dot-notation paths).
-- `params` is an optional `Record<string, string | number>` for interpolation.
-- Returns the translated string, or the key itself if no translation is found.
+- `key` is a type-safe union of every system and app message key (dot-notation paths).
+- `params` is an optional `Record<string, string | number>` for ICU interpolation.
+- Returns the translated string, or the key itself when no translation is found.
 
-### Parameter interpolation
+### withI18n() outside services
 
-Use `{paramName}` placeholders in your messages. Pass the values as the second argument to `t()`:
+`withI18n()` translates a key anywhere in request-scoped code: services, middleware, error handlers, cron jobs, or queue consumers. It resolves `I18nService` from the container for you.
 
 ```typescript
-// Message: 'Hello, {name}! You have {count} notifications.'
-i18n.t('common.notifications', { name: 'Alice', count: 5 })
-// Result: 'Hello, Alice! You have 5 notifications.'
+import { withI18n } from 'stratal/i18n'
+
+const message = withI18n('errors.notFound')
+const greeting = withI18n('common.greeting', { name: 'Alice' })
 ```
+
+It uses the current request's locale and returns the key itself when called outside a request context (for example during startup).
 
 ### In error classes
 
-Error classes use message keys that `GlobalErrorHandler` translates at response time:
+Translate the message inside the error class so the response is localized to the request:
 
 ```typescript
-import { ApplicationError, ERROR_CODES } from 'stratal/errors'
+import { HttpException } from 'stratal/errors'
+import { withI18n } from 'stratal/i18n'
 
-export class UserNotFoundError extends ApplicationError {
-  constructor(userId: string) {
-    super('users.errors.notFound', ERROR_CODES.USERS.NOT_FOUND, { userId })
+export class NoteNotFoundError extends HttpException {
+  constructor(noteId: string) {
+    super(404, withI18n('notes.errors.notFound', { noteId }))
   }
 }
 ```
 
-See the [Error Handling](/guides/error-handling/) guide for more details.
+<LinkCard
+  title="Error Handling"
+  href="/guides/error-handling/"
+  description="How errors flow through the exception pipeline and map to HTTP responses."
+/>
 
 ## Locale detection
 
-Stratal detects the locale from the `X-Locale` request header. The detection flow is:
+Detection middleware runs automatically on every route. The `detection` strategy decides where the locale comes from.
 
-1. Read the `X-Locale` header from the incoming request.
-2. Convert it to lowercase.
-3. Check if the locale is in the configured `locales` array.
-4. If supported, use it for the request. If not, fall back to `defaultLocale`.
+| Strategy | Source | Example |
+| --- | --- | --- |
+| `'cookie'` (default) | `locale` cookie | `Cookie: locale=fr` |
+| `'header'` | `Accept-Language` header | `Accept-Language: fr` |
+| `'querystring'` | `?locale=` query param | `/api/users?locale=fr` |
+| `'path'` | First URL path segment | `/fr/api/users` |
 
-The locale is set on the `RouterContext` and is available for the entire request lifecycle, including validation error messages and queue message metadata.
+```typescript
+// Accept-Language header detection
+I18nModule.forRoot({
+  defaultLocale: 'en',
+  locales: ['en', 'fr'],
+  detection: { strategy: 'header' },
+})
 
+// Disable detection entirely
+I18nModule.forRoot({
+  defaultLocale: 'en',
+  locales: ['en', 'fr'],
+  detection: { enabled: false },
+})
 ```
-GET /api/users
-X-Locale: fr
+
+If the detected locale is not in `locales`, the request falls back to `defaultLocale`. At runtime you can read or override the locale through the `RouterContext`:
+
+```typescript
+ctx.getLocale()         // current locale for the request
+ctx.setLocale('fr')     // override it for the rest of the request
+```
+
+### Path-based detection
+
+When `strategy: 'path'`, every route is registered with a `/{locale}` prefix (for example `/{locale}/api/users`). The `locale` parameter is injected into each route's params schema, validated against `locales`, and documented in OpenAPI as a path parameter.
+
+The `prefixDefaultLocale` option controls whether the default locale gets a URL prefix:
+
+| Value | Behavior |
+| --- | --- |
+| `false` (default) | Default locale is unprefixed (`/users`); others are prefixed (`/fr/users`). `/en/users` returns 404. |
+| `'redirect'` | Same as `false`, but `/en/users` is 301-redirected to `/users`. |
+| `true` | Every locale is prefixed (`/en/users`, `/fr/users`); `/users` returns 404. |
+
+```typescript
+I18nModule.forRoot({
+  defaultLocale: 'en',
+  locales: ['en', 'fr'],
+  detection: { strategy: 'path', prefixDefaultLocale: 'redirect' },
+})
 ```
 
 <Aside type="tip">
-  For queue consumers and cron jobs, the locale defaults to `'en'` unless the queue message contains a `metadata.locale` value. The queue sender automatically captures the current request locale.
+  For queue consumers and cron jobs there is no request, so the locale defaults to `'en'` unless the queue message carries a `metadata.locale` value. The queue sender automatically captures the current request locale into `metadata.locale` when it enqueues a message, so translations stay consistent across the boundary.
 </Aside>
 
 ## Validation error translation
 
-When the i18n module is active, Zod validation errors are automatically translated based on the request locale. This works through a global Zod error map that intercepts every validation error and translates it using the i18n service.
+When the i18n module is active, Zod validation errors are translated automatically based on the request locale. The module installs a global Zod error map that intercepts every validation issue and resolves it through the i18n service.
 
-For example, a request with `X-Locale: fr` that fails body validation will return French error messages:
+A request with the French locale that fails body validation returns French issue messages in the standard error response. The translation covers every Zod v4 issue type, including `invalid_type`, `too_small`, `too_big`, `invalid_format`, and string formats like `email`, `url`, and `uuid`.
 
-```json
-{
-  "code": 1003,
-  "message": "Erreur de validation",
-  "metadata": {
-    "issues": [
-      {
-        "path": "email",
-        "message": "Adresse e-mail invalide",
-        "code": "invalid_format"
-      }
-    ]
-  }
-}
-```
+<Aside type="caution">
+  Import `z` from `stratal/validation`, not directly from `zod`. The Stratal re-export is wired into the i18n error map; a direct `zod` import bypasses translation.
+</Aside>
 
-The translation covers all standard Zod error codes including `required`, `invalid_type`, `too_small`, `too_big`, and format validations like `email`, `url`, `uuid`, and `datetime`.
+### Custom validation messages with withZodI18n
 
-### Custom validation messages
-
-Use the `withI18n` helper to attach translatable messages to custom Zod validations:
+Use `withZodI18n()` from `stratal/validation` to attach a translatable message key to a Zod validator. It returns a Zod error config that resolves the key at validation time using the request's locale.
 
 ```typescript
-import { z, withI18n } from 'stratal/validation'
+import { z, withZodI18n } from 'stratal/validation'
 
-const schema = z.object({
-  email: z.string().email(withI18n('validation.email')),
-  name: z.string().min(2, withI18n('validation.minLength', { min: 2 })),
+export const createNoteSchema = z.object({
+  title: z.string()
+    .min(1, withZodI18n('notes.validation.title.required'))
+    .max(255, withZodI18n('notes.validation.title.max', { max: 255 })),
+  content: z.string().optional(),
 })
 ```
 
-The `withI18n` function creates a deferred translation that resolves at validation time using the request's locale context. You can also pass interpolation parameters:
+`withZodI18n(key, params?)` works with both built-in validators (`.min`, `.max`, `.email`, ...) and `.refine()`. Pass ICU parameters as the second argument.
 
-```typescript
-z.string().min(5, withI18n('validation.minLength', { min: 5 }))
-```
+<Aside type="note">
+  Use Stratal's `cuid2()` from `stratal/validation` instead of `z.cuid2()` for real cuid2 validation. To attach a translatable error, pass a `withZodI18n()` result: `cuid2(withZodI18n('tenants.errors.invalidId'))`. Never pass an i18n key string directly to `error`.
+</Aside>
 
 ## Built-in system messages
 
-Stratal ships with English translations for all framework messages. These cover:
+Stratal ships English translations under four reserved namespaces:
 
-- **Error responses**: `errors.internalError`, `errors.notFound`, `errors.unauthorized`, `errors.forbidden`, and many more
-- **Validation messages**: `validation.required`, `validation.email`, `validation.minLength`, `validation.maxLength`, and others
-- **Zod error codes**: Comprehensive translations for every Zod v4 issue type (`zodI18n.errors.required`, `zodI18n.errors.invalid_type`, `zodI18n.errors.too_small.string.inclusive`, etc.)
-- **Domain-specific errors**: Queue, cron, storage, cache, email, and auth error messages
+- `common.*`: shared framework strings (API metadata, security scheme descriptions)
+- `emails.*`: built-in email template strings
+- `validation.*`: form validation messages (`validation.required`, `validation.email`, `validation.minLength`, ...)
+- `zodI18n.*`: translations for every Zod v4 issue code (`zodI18n.errors.required`, `zodI18n.errors.invalid_type`, `zodI18n.errors.too_small.string.inclusive`, ...)
 
-To override any system message, define the same key in your application messages. Your value will take precedence over the built-in one.
+To override any system message, register the same key in your application messages. Your value takes precedence after the deep merge.
 
 ## Type-safe message keys
 
-The module uses TypeScript module augmentation to provide autocomplete for message keys. Each module or feature owns one distinct top-level namespace on the `AppMessageNamespaces` registry:
+`MessageKeys` is derived from two sources:
+
+<Steps>
+1. **System keys**: inferred from core's built-in `common.*`, `emails.*`, `validation.*`, and `zodI18n.*` messages.
+
+2. **App keys**: derived from `AppMessageNamespaces`, the keyed registry each module augments with its own distinct namespace.
+</Steps>
 
 ```typescript
 // src/modules/users/i18n/en.ts
@@ -276,16 +341,12 @@ declare module 'stratal/i18n' {
 }
 ```
 
-<Aside type="note">
-  Each module must own exactly **one** key on `AppMessageNamespaces`. Two modules augmenting the same key with different shapes will fail with TypeScript error **TS2717** ("Subsequent property declarations must have the same type"), because interface merging requires same-named properties across declarations to be structurally identical. This is the guardrail that keeps namespace ownership unambiguous — pick a distinct top-level key for every module (`users`, `billing`, `tenancy`, …) and nest your errors/validation/etc. underneath it.
-</Aside>
-
-This gives you autocomplete and compile-time checks for both system and app message keys:
+Once augmented, both system and app keys are autocompleted and compile-checked:
 
 ```typescript
-this.i18n.t('errors.routeNotFound', { method: 'GET', path: '/api' }) // system key
-this.i18n.t('users.welcome', { name: 'Alice' })                      // app key
-this.i18n.t('users.errors.notFound', { userId: 'u_123' })            // app key
+this.i18n.t('validation.required')                        // system key
+this.i18n.t('users.welcome', { name: 'Alice' })           // app key
+this.i18n.t('users.errors.notFound', { userId: 'u_123' }) // app key
 ```
 
 ## DI tokens
@@ -294,16 +355,28 @@ All tokens are exported from `stratal/i18n` via `I18N_TOKENS`:
 
 | Token | Service | Scope |
 | --- | --- | --- |
+| `I18N_TOKENS.MessageRegistry` | `MessageRegistry` | Singleton |
 | `I18N_TOKENS.MessageLoader` | `MessageLoaderService` | Singleton |
 | `I18N_TOKENS.I18nService` | `I18nService` | Request |
 | `I18N_TOKENS.Options` | `I18nModuleOptions` | Value |
 
-<Aside type="tip">
-  The module uses JIT compilation via `@intlify/core-base`, which generates AST instead of JavaScript code. This avoids CSP violations (`eval`/`new Function`) in Cloudflare Workers. No manual setup is required.
-</Aside>
+## CLI introspection
+
+The [Quarry CLI](/core-concepts/quarry-cli/) ships i18n commands for auditing translations:
+
+```bash
+npx quarry i18n:check       # Audit missing/extra keys (exit code 1 when issues found)
+npx quarry i18n:stats       # Coverage percentage per locale
+npx quarry i18n:list        # List keys with per-locale coverage
+npx quarry i18n:search      # Search keys or values by substring
+npx quarry i18n:namespaces  # Key counts by namespace
+npx quarry i18n:duplicates  # Find keys with duplicate translation values
+```
+
+`i18n:check` exits with code 1 when it finds issues, which makes it a good CI guard against untranslated keys.
 
 ## Next steps
 
 - [Validation](/guides/validation/) to learn how validation schemas integrate with i18n error messages.
-- [Error Handling](/guides/error-handling/) for details on how translated errors are returned to clients.
+- [Error Handling](/guides/error-handling/) for how translated errors are returned to clients.
 - [Queues](/integrations/queues/) to see how locale context is preserved across queue messages.

@@ -3,7 +3,7 @@ title: Project Structure
 description: Recommended directory layout and file conventions.
 ---
 
-After completing [Your First Worker](/getting-started/your-first-worker/) you have a small project with a controller, a service, a root module, and an entry point. This page explains how to organise those files — and the ones you will add next — as your application grows.
+After completing [Your First Worker](/getting-started/your-first-worker/) you have a small project with a controller, a service, a root module, and an entry point. This page explains how to organise those files - and the ones you will add next - as your application grows.
 
 ## Minimal layout
 
@@ -15,7 +15,8 @@ my-worker/
 │   ├── app.module.ts          # Root module
 │   ├── hello.controller.ts    # Controller
 │   ├── hello.service.ts       # Service
-│   └── index.ts               # Worker entry point
+│   ├── index.ts               # Worker entry point
+│   └── quarry.ts              # CLI (Quarry) entry point
 ├── package.json
 ├── tsconfig.json
 └── wrangler.jsonc
@@ -40,7 +41,7 @@ Stratal uses a suffix-based naming convention so you can tell what a file does a
 | `.schemas.ts`       | Zod schemas for request/response validation        | `notes.schemas.ts`               |
 | `.error.ts`         | Custom error classes extending `ApplicationError`  | `note-not-found.error.ts`        |
 
-You are not required to use every suffix — only add files your feature actually needs.
+You are not required to use every suffix - only add files your feature actually needs.
 
 ## Feature modules
 
@@ -87,7 +88,7 @@ import { NotesModule } from './notes/notes.module'
 export class AppModule {}
 ```
 
-The root module no longer lists individual controllers or providers — each feature module owns its own.
+The root module no longer lists individual controllers or providers - each feature module owns its own.
 
 ## Scaling up
 
@@ -153,14 +154,15 @@ export class AppModule {}
 | File               | Role                                                                                           |
 | ------------------ | ---------------------------------------------------------------------------------------------- |
 | `src/index.ts`     | Worker entry point. Exports a `new Stratal({ module: AppModule })` instance. |
+| `src/quarry.ts`    | CLI entry point. Exports `QuarryRunner.run({ imports: [AppModule] })` so [Quarry](/core-concepts/quarry-cli/) commands stay out of the Worker bundle. |
 | `src/app.module.ts`| Root module. Imports every feature module so the DI container knows about all controllers, providers, consumers, and jobs. |
 | `package.json`     | Lists `stratal` as a dependency, plus `typescript`, `wrangler`, and `@cloudflare/workers-types` as dev dependencies. |
-| `tsconfig.json`    | Enables `experimentalDecorators` and `emitDecoratorMetadata` — both required for Stratal's DI system. |
+| `tsconfig.json`    | Enables `experimentalDecorators` and `emitDecoratorMetadata` - both required for Stratal's DI system. |
 | `wrangler.jsonc`   | Cloudflare Worker config. Sets the entry point (`main`), compatibility flags (`nodejs_compat`), environment variables, and bindings (KV, Queues, etc.). |
 
 ## Recommendations
 
-- **Keep features self-contained.** A feature directory should hold everything it needs — controller, service, schemas, tokens, and module. Other features interact through imports and DI, not by reaching into sibling directories.
+- **Keep features self-contained.** A feature directory should hold everything it needs - controller, service, schemas, tokens, and module. Other features interact through imports and DI, not by reaching into sibling directories.
 - **Co-locate schemas with their feature.** Putting validation schemas next to the controller that uses them makes them easy to find and update together.
 - **Extract shared concerns into their own modules.** If a guard or middleware is used by multiple features, give it its own module (e.g. `guards/`) and import that module where needed.
 - **Use a `types/` directory for ambient declarations.** Module augmentation files like `env.d.ts` (for typing `Env` bindings) belong in a top-level `types/` directory inside `src/`.
