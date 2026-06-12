@@ -1,6 +1,6 @@
 ---
 title: Workflows
-description: Build multi-step Cloudflare Workflows with full dependency injection using StratalWorkflow — access DI services in each workflow step.
+description: Build multi-step Cloudflare Workflows with full dependency injection using StratalWorkflow - access DI services in each workflow step.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -120,9 +120,9 @@ When you call `this.runInScope(callback)`, Stratal:
 
 Cloudflare Workflows automatically handle retries and persistence for each step. Keep these patterns in mind:
 
-- **One `runInScope` per step** — each step should create its own DI scope to stay isolated.
-- **Steps are idempotent** — Cloudflare may replay steps on failure, so design your logic to be safe to re-run.
-- **Pass data between steps via return values** — `step.do()` returns the value from your callback, which Cloudflare persists and provides to subsequent steps.
+- **One `runInScope` per step** - each step should create its own DI scope to stay isolated.
+- **Steps are idempotent** - Cloudflare may replay steps on failure, so design your logic to be safe to re-run.
+- **Pass data between steps via return values** - `step.do()` returns the value from your callback, which Cloudflare persists and provides to subsequent steps.
 
 ```typescript
 // Step results flow naturally between steps

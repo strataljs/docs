@@ -1,78 +1,98 @@
 ---
 title: Storage
-description: Upload, download, and manage files with S3-compatible providers using the StorageModule, disk configuration, and presigned URLs.
+description: Upload, download, and manage files on Cloudflare R2 using the StorageModule, disk configuration, and presigned URLs.
 ---
 
-import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem, Steps, LinkCard } from '@astrojs/starlight/components';
 
-Stratal provides a `StorageModule` for file operations with S3-compatible storage providers. It supports multiple disk configurations, chunked uploads, presigned URLs, and path template variables. It works with any S3-compatible service, including Cloudflare R2, AWS S3, and MinIO.
+Stratal provides a `StorageModule` for file operations backed by native Cloudflare R2 through Worker bindings. It supports multiple disk configurations, chunked uploads, presigned URLs, and path template variables. Each disk maps to an R2 bucket binding declared in your `wrangler.jsonc`.
 
 ## Install dependencies
 
-The storage module uses the AWS SDK v3 for S3 operations. Install the required packages:
+Storage is built into Stratal. There is nothing to install. It talks to R2 directly through Worker bindings, with no S3 client or AWS SDK involved.
 
-```bash
-yarn add @aws-sdk/client-s3 @aws-sdk/lib-storage @aws-sdk/s3-request-presigner
-```
+<Aside type="note">
+  Because storage uses native R2 bindings, the bucket your Worker reaches is controlled entirely by `wrangler.jsonc`. There are no access keys, secrets, endpoints, or regions to manage.
+</Aside>
 
 ## Configuration
 
-Register the `StorageModule` in your root module using `forRoot` or `forRootAsync`:
+A disk is described by a `StorageEntry`. The `disk` is a logical name you reference in code, `binding` matches an `r2_buckets` binding name from your `wrangler.jsonc`, and `root` is the path prefix written into the bucket.
 
-<Tabs>
-  <TabItem label="Static">
-```typescript
-import { Module } from 'stratal/module'
-import { StorageModule } from 'stratal/storage'
+<Steps>
 
-@Module({
-  imports: [
-    StorageModule.forRoot({
-      storage: [
-        {
-          disk: 'uploads',
-          provider: 's3',
-          endpoint: 'https://your-account-id.r2.cloudflarestorage.com',
-          bucket: 'my-bucket',
-          region: 'auto',
-          accessKeyId: 'your-access-key',
-          secretAccessKey: 'your-secret-key',
-          root: 'uploads/{year}/{month}',
-          visibility: 'private',
-        },
-      ],
-      defaultStorageDisk: 'uploads',
-      presignedUrl: {
-        defaultExpiry: 3600,
-        maxExpiry: 604800,
-      },
-    }),
-  ],
-})
-export class AppModule {}
-```
-  </TabItem>
-  <TabItem label="Async">
-```typescript
-import { Module } from 'stratal/module'
-import { StorageModule } from 'stratal/storage'
+1. Declare the R2 bucket binding in `wrangler.jsonc`:
 
-@Module({
-  imports: [
-    StorageModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        storage: config.get('storage'),
-        defaultStorageDisk: config.get('defaultStorageDisk'),
-        presignedUrl: config.get('presignedUrl'),
-      }),
-    }),
-  ],
-})
-export class AppModule {}
-```
-  </TabItem>
-</Tabs>
+   ```jsonc
+   {
+     "r2_buckets": [
+       {
+         "binding": "UPLOADS_BUCKET",
+         "bucket_name": "my-uploads"
+       }
+     ],
+     "vars": {
+       "APP_SECRET": "your-app-secret"
+     }
+   }
+   ```
+
+2. Register the `StorageModule` in your root module using `forRoot` or `forRootAsync`:
+
+   <Tabs>
+     <TabItem label="Static">
+   ```typescript
+   import { Module } from 'stratal/module'
+   import { StorageModule } from 'stratal/storage'
+
+   @Module({
+     imports: [
+       StorageModule.forRoot({
+         storage: [
+           {
+             disk: 'uploads',
+             binding: 'UPLOADS_BUCKET',
+             root: 'uploads/{year}/{month}',
+           },
+         ],
+         defaultStorageDisk: 'uploads',
+         presignedUrl: {
+           defaultExpiry: 3600,
+           maxExpiry: 604800,
+         },
+       }),
+     ],
+   })
+   export class AppModule {}
+   ```
+     </TabItem>
+     <TabItem label="Async">
+   ```typescript
+   import { Module } from 'stratal/module'
+   import { StorageModule } from 'stratal/storage'
+
+   @Module({
+     imports: [
+       StorageModule.forRootAsync({
+         inject: [ConfigService],
+         useFactory: (config: ConfigService) => ({
+           storage: config.get('storage'),
+           defaultStorageDisk: config.get('defaultStorageDisk'),
+           presignedUrl: config.get('presignedUrl'),
+         }),
+       }),
+     ],
+   })
+   export class AppModule {}
+   ```
+     </TabItem>
+   </Tabs>
+
+</Steps>
+
+<Aside type="caution">
+  Presigned URLs are signed with the `APP_SECRET` environment variable. Declare it in `wrangler.jsonc` (under `vars` for local development, or as a Worker secret for production). The presigned-URL helpers throw if `APP_SECRET` is missing.
+</Aside>
 
 ### StorageConfig
 
@@ -82,6 +102,7 @@ export class AppModule {}
 | `defaultStorageDisk` | `string` | Disk name used when no disk is specified |
 | `presignedUrl.defaultExpiry` | `number` | Default presigned URL expiry in seconds |
 | `presignedUrl.maxExpiry` | `number` | Maximum allowed expiry (up to 604800 for 7 days) |
+| `route` | `StorageRouteConfig?` | Optional config for the auto-registered storage routes |
 
 ### StorageEntry
 
@@ -89,49 +110,42 @@ Each entry in the `storage` array configures a disk:
 
 | Property | Type | Description |
 | --- | --- | --- |
-| `disk` | `string` | Unique disk identifier |
-| `provider` | `'s3'` | Storage provider (S3-compatible) |
-| `endpoint` | `string` | S3 endpoint URL |
-| `bucket` | `string` | Bucket name |
-| `region` | `string` | AWS region or `'auto'` for R2 |
-| `accessKeyId` | `string` | Access key credential |
-| `secretAccessKey` | `string` | Secret key credential |
-| `root` | `string` | Root path prefix (supports template variables) |
-| `visibility` | `'public' \| 'private'` | Default object visibility |
+| `disk` | `string` | Unique disk identifier referenced in code |
+| `binding` | `string` | R2 bucket binding name from `wrangler.jsonc` |
+| `root` | `string` | Root path prefix within the bucket (supports template variables) |
 
 ## Disk configuration
 
-You can define multiple disks for different storage needs:
+You can define multiple disks, each pointing at its own R2 bucket binding:
 
 ```typescript
 StorageModule.forRoot({
   storage: [
     {
       disk: 'documents',
-      provider: 's3',
-      endpoint: 'https://account.r2.cloudflarestorage.com',
-      bucket: 'docs-bucket',
-      region: 'auto',
-      accessKeyId: '...',
-      secretAccessKey: '...',
+      binding: 'DOCS_BUCKET',
       root: 'documents/{year}',
-      visibility: 'private',
     },
     {
       disk: 'public-assets',
-      provider: 's3',
-      endpoint: 'https://account.r2.cloudflarestorage.com',
-      bucket: 'assets-bucket',
-      region: 'auto',
-      accessKeyId: '...',
-      secretAccessKey: '...',
+      binding: 'ASSETS_BUCKET',
       root: 'assets',
-      visibility: 'public',
     },
   ],
   defaultStorageDisk: 'documents',
   presignedUrl: { defaultExpiry: 3600, maxExpiry: 604800 },
 })
+```
+
+Each `binding` must have a matching entry in your `wrangler.jsonc` `r2_buckets` array:
+
+```jsonc
+{
+  "r2_buckets": [
+    { "binding": "DOCS_BUCKET", "bucket_name": "my-docs" },
+    { "binding": "ASSETS_BUCKET", "bucket_name": "my-assets" }
+  ]
+}
 ```
 
 When calling storage methods, you can specify a disk by name. If omitted, the `defaultStorageDisk` is used.
@@ -178,7 +192,7 @@ The `upload` method returns an `UploadResult`:
 | --- | --- | --- |
 | `path` | `string` | Relative path within the disk |
 | `disk` | `string` | Disk name used |
-| `fullPath` | `string` | Full path including bucket |
+| `fullPath` | `string` | Full object path including the disk root |
 | `size` | `number` | File size in bytes |
 | `mimeType` | `string` | MIME type |
 | `uploadedAt` | `Date` | Upload timestamp |
@@ -189,8 +203,14 @@ The `upload` method returns an `UploadResult`:
 | --- | --- | --- | --- |
 | `size` | `number` | Yes | Content size in bytes |
 | `mimeType` | `string` | No | MIME type |
-| `metadata` | `Record<string, string>` | No | Custom S3 object metadata |
-| `tagging` | `string` | No | S3 tagging for lifecycle policies |
+| `metadata` | `Record<string, string>` | No | Custom object metadata stored on the R2 object |
+| `tagging` | `string` | No | Tag string stored as object metadata for lifecycle handling |
+
+Pass a disk name as the final argument to target a non-default disk:
+
+```typescript
+await this.storage.upload(content, `docs/${filename}`, options, 'public-assets')
+```
 
 ### Chunked uploads
 
@@ -202,7 +222,7 @@ const result = await this.storage.chunkedUpload(stream, 'videos/clip.mp4', {
 })
 ```
 
-Chunked upload uses S3 multipart upload under the hood. It automatically handles retries and cleans up partial uploads on failure. The `size` option is optional for chunked uploads.
+Chunked upload splits the stream into R2 multipart parts under the hood. It cleans up the partial upload if any part fails. The `size` option is optional for chunked uploads.
 
 ## Download files
 
@@ -231,7 +251,7 @@ The `download` method returns a `DownloadResult` with the following properties:
 | `toArrayBuffer()` | `Promise<Uint8Array> \| undefined` | File content as bytes |
 | `contentType` | `string` | MIME type |
 | `size` | `number` | File size in bytes |
-| `metadata` | `Record<string, string>?` | S3 object metadata |
+| `metadata` | `Record<string, string>?` | Custom R2 object metadata |
 
 ## Delete files
 
@@ -247,11 +267,11 @@ Delete is idempotent. No error is thrown if the file does not exist.
 const exists = await this.storage.exists('docs/report.pdf')
 ```
 
-Uses an S3 `HeadObject` request, so it does not download the file content.
+This issues an R2 `head` request, so it does not download the file content.
 
 ## Presigned URLs
 
-Generate temporary URLs that grant time-limited access to private files:
+Generate temporary URLs that grant time-limited access to files. The URLs point at the auto-registered storage routes and are signed with your `APP_SECRET`:
 
 ```typescript
 // Download URL (GET)
@@ -268,10 +288,10 @@ Each method returns a `PresignedUrlResult`:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `url` | `string` | The presigned URL |
+| `url` | `string` | The signed URL |
 | `expiresIn` | `number` | Expiry duration in seconds |
 | `expiresAt` | `Date` | Expiration timestamp |
-| `method` | `'GET' \| 'PUT' \| 'DELETE'` | HTTP method the URL is valid for |
+| `method` | `'GET' \| 'PUT' \| 'DELETE' \| 'HEAD'` | HTTP method the URL is valid for |
 
 ### Expiry validation
 
@@ -281,7 +301,42 @@ The `expiresIn` parameter is validated against the configured limits:
 - Maximum: the `presignedUrl.maxExpiry` value from your config (up to 604800 seconds / 7 days)
 - If omitted, `presignedUrl.defaultExpiry` is used
 
-A `PresignedUrlInvalidExpiryError` is thrown if the value falls outside the allowed range.
+## Auto-registered storage routes
+
+`StorageModule` mounts a hidden `StorageController` that proxies R2 operations behind signed URLs. The presigned-URL helpers return URLs that point at these routes:
+
+| Method | Route | Helper |
+| --- | --- | --- |
+| `GET` | `/storage/:disk/*` | `getPresignedDownloadUrl` |
+| `PUT` | `/storage/:disk/*` | `getPresignedUploadUrl` |
+| `DELETE` | `/storage/:disk/*` | `getPresignedDeleteUrl` |
+
+The `:disk` segment is the disk name and the `*` wildcard is the file path within that disk. These routes are hidden from your generated OpenAPI docs.
+
+### Customizing the routes
+
+Pass a `route` option to `StorageModule.forRoot()` to change the base path or opt out:
+
+```typescript
+StorageModule.forRoot({
+  // ...storage, defaultStorageDisk, presignedUrl
+  route: {
+    basePath: '/files',  // default: '/storage'
+    disabled: false,     // default: false
+  },
+})
+```
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `route.basePath` | `string` | `/storage` | Base path the storage routes are mounted under |
+| `route.disabled` | `boolean` | `false` | Skip auto-registration of the storage routes |
+
+When you set a custom `basePath`, the presigned URLs are generated against that path automatically.
+
+<Aside type="note">
+  Set `route: { disabled: true }` to skip auto-registration entirely, for example when you front R2 with your own controller. The presigned-URL helpers still build URLs against the configured `basePath`, so disable the routes only if you are serving those paths yourself.
+</Aside>
 
 ## Path template variables
 
@@ -297,75 +352,159 @@ For example, a root of `uploads/{year}/{month}` resolves to `uploads/2026/02`. T
 
 ## Error handling
 
-Storage operations throw specific error classes that extend `ApplicationError`. Each error includes contextual data (file path, disk name, etc.) and is automatically translated based on the request locale:
+Storage operations throw specific error classes. Each maps to an HTTP status, so the global error handler can translate it into the right response:
 
-| Error class | When thrown |
-| --- | --- |
-| `FileNotFoundError` | File does not exist |
-| `InvalidDiskError` | Specified disk not found in configuration |
-| `DiskNotConfiguredError` | Disk configuration is missing or incomplete |
-| `StorageProviderNotSupportedError` | Provider type is not implemented |
-| `PresignedUrlInvalidExpiryError` | Presigned URL expiry is outside the 1s–7d range |
-| `InvalidFileTypeError` | File type is not allowed |
-| `FileTooLargeError` | File exceeds the configured size limit |
+| Error class | Status | When thrown |
+| --- | --- | --- |
+| `StorageError` | varies | Base class for storage errors; extends `ApplicationError` |
+| `FileNotFoundError` | 404 | The requested file does not exist |
+| `FileTooLargeError` | 413 | The file exceeds the allowed size |
+| `InvalidFileTypeError` | 422 | The file MIME type is not allowed |
 
 ```typescript
 import {
   FileNotFoundError,
-  InvalidDiskError,
-  PresignedUrlInvalidExpiryError,
+  FileTooLargeError,
+  InvalidFileTypeError,
 } from 'stratal/storage'
 
 try {
   const file = await this.storage.download('docs/missing.pdf')
 } catch (error) {
   if (error instanceof FileNotFoundError) {
-    // File does not exist — return 404
+    // File does not exist - return 404
   }
-  if (error instanceof InvalidDiskError) {
-    // Disk name is invalid — check configuration
+  if (error instanceof InvalidFileTypeError) {
+    // The MIME type is not allowed - reject the upload
   }
 }
 ```
 
-## Using with Cloudflare R2
+## Multipart uploads
 
-Cloudflare R2 is S3-compatible, so it works with the storage module's `s3` provider. The key differences are:
+For fine-grained control over large file uploads, the R2 provider implements `IMultipartProvider`. This is useful when you need to upload files in parts from the client, resume interrupted uploads, or handle very large files that exceed single-request limits.
 
-- Set `region` to `'auto'`
-- Use your R2 endpoint: `https://<account-id>.r2.cloudflarestorage.com`
-- Generate R2 API tokens in the Cloudflare dashboard for `accessKeyId` and `secretAccessKey`
+The multipart methods live on the underlying provider rather than on `StorageService`. Inject the `StorageManagerService` and resolve the provider for a disk, then narrow it to `IMultipartProvider`:
 
 ```typescript
-{
-  disk: 'r2',
-  provider: 's3',
-  endpoint: 'https://your-account-id.r2.cloudflarestorage.com',
-  bucket: 'my-r2-bucket',
-  region: 'auto',
-  accessKeyId: env.R2_ACCESS_KEY_ID,
-  secretAccessKey: env.R2_SECRET_ACCESS_KEY,
-  root: 'uploads/{year}/{month}',
-  visibility: 'private',
+import { Transient, inject } from 'stratal/di'
+import { STORAGE_TOKENS, StorageManagerService } from 'stratal/storage'
+import type { IMultipartProvider } from 'stratal/storage/providers'
+
+@Transient()
+export class UploadService {
+  constructor(
+    @inject(STORAGE_TOKENS.StorageManager)
+    private readonly manager: StorageManagerService,
+  ) {}
+
+  private async provider(disk = 'uploads'): Promise<IMultipartProvider> {
+    return (await this.manager.getProvider(disk)) as IMultipartProvider
+  }
+
+  async initiateUpload(filename: string) {
+    const provider = await this.provider()
+    const { uploadId, key } = await provider.createMultipartUpload(
+      `uploads/${filename}`,
+      { contentType: 'application/octet-stream' },
+    )
+    return { uploadId, key }
+  }
 }
 ```
 
-<Aside type="tip">
-  Store your R2 credentials as Cloudflare Worker secrets rather than hardcoding them. Access them through your `ConfigService` or environment bindings.
-</Aside>
+### Uploading parts
+
+Each part must be at least 5 MB (except the last part). Parts are identified by a sequential part number starting at 1:
+
+```typescript
+async uploadPart(key: string, uploadId: string, partNumber: number, data: Uint8Array) {
+  const provider = await this.provider()
+  const { etag } = await provider.uploadPart(key, uploadId, partNumber, data)
+  return { etag, partNumber }
+}
+```
+
+### Completing the upload
+
+After all parts are uploaded, complete the multipart upload by passing the list of parts:
+
+```typescript
+import type { CompletedPart } from 'stratal/storage/providers'
+
+async completeUpload(key: string, uploadId: string, parts: CompletedPart[]) {
+  const provider = await this.provider()
+  const result = await provider.completeMultipartUpload(key, uploadId, parts)
+  return result // { key, location? }
+}
+```
+
+### Aborting an upload
+
+If an upload needs to be cancelled, abort it to clean up any uploaded parts:
+
+```typescript
+const provider = await this.provider()
+await provider.abortMultipartUpload(key, uploadId)
+```
+
+### Listing parts and uploads
+
+```typescript
+const provider = await this.provider()
+
+// List uploaded parts for a specific upload
+const { parts, isTruncated } = await provider.listParts(key, uploadId)
+
+// List all in-progress multipart uploads
+const { uploads } = await provider.listMultipartUploads()
+```
+
+### Additional object operations
+
+The provider also exposes `headObject` for metadata inspection and `deleteObjects` for batch deletion:
+
+```typescript
+const provider = await this.provider()
+
+// Get object metadata without downloading the file
+const metadata = await provider.headObject('uploads/report.pdf')
+// { size, contentType, metadata } or null
+
+// Delete multiple objects in a single request
+const result = await provider.deleteObjects([
+  'uploads/old-file-1.pdf',
+  'uploads/old-file-2.pdf',
+])
+// { deleted: 2, errors: [] }
+```
+
+### Multipart API reference
+
+| Method | Description |
+| --- | --- |
+| `createMultipartUpload(key, options?)` | Start a new multipart upload. Returns `{ uploadId, key }`. |
+| `uploadPart(key, uploadId, partNumber, body)` | Upload a single part. Returns `{ etag, partNumber }`. |
+| `completeMultipartUpload(key, uploadId, parts)` | Finalize the upload. Returns `{ key, location? }`. |
+| `abortMultipartUpload(key, uploadId)` | Cancel and clean up an in-progress upload. |
+| `listParts(key, uploadId, partNumberMarker?)` | List uploaded parts. Returns `{ parts, isTruncated, nextPartNumberMarker }`. |
+| `listMultipartUploads(keyMarker?, uploadIdMarker?)` | List all in-progress uploads. |
+| `headObject(key)` | Get object metadata. Returns `{ size, contentType, metadata }` or `null`. |
+| `deleteObjects(keys)` | Delete multiple objects. Returns `{ deleted, errors }`. |
+| `getBucket()` | Returns the R2 bucket binding name for the disk. |
 
 ## Best practices
 
 - **Use path templates.** Leverage `{year}`, `{month}`, and `{date}` in your `root` configuration to organize files automatically.
-- **Minimize disk switching.** Design your disk layout so most operations use the default disk. Pass an explicit disk name only when you need a different bucket or visibility.
-- **Use presigned URLs for client uploads.** Generate presigned upload URLs instead of proxying file uploads through your API. This offloads bandwidth to the storage provider.
+- **Minimize disk switching.** Design your disk layout so most operations use the default disk. Pass an explicit disk name only when you need a different bucket.
+- **Use presigned URLs for client uploads.** Generate presigned upload URLs instead of proxying file uploads through your API. This offloads bandwidth from your Worker.
 - **Keep expiry times short.** Use the shortest practical presigned URL expiry. The default of 1 hour is reasonable for most use cases.
-- **Handle errors gracefully.** Always catch storage errors — a file might not exist, the disk might be misconfigured, or the network might be unreachable.
-- **Separate environments.** Use different buckets or disks for development, staging, and production to prevent accidental data overlap.
-- **Use independent credentials.** Each disk should have its own access credentials with the minimum required permissions.
+- **Handle errors gracefully.** Always catch storage errors. A file might not exist, the disk might be misconfigured, or the binding might be missing.
+- **Separate environments.** Point your disks at different R2 buckets for development, staging, and production to prevent accidental data overlap.
+- **Keep `APP_SECRET` safe.** Store it as a Worker secret in production rather than committing it to `wrangler.jsonc`.
 
 ## Next steps
 
-- [Email](/integrations/email/) to learn how email attachments can reference files in storage.
-- [Environment Typing](/guides/environment-typing/) for declaring custom environment bindings.
-- [Dependency Injection](/core-concepts/dependency-injection/) for injecting `StorageService` into your providers.
+<LinkCard title="Email" href="/integrations/email/" description="Learn how email attachments can reference files in storage." />
+<LinkCard title="Environment Typing" href="/guides/environment-typing/" description="Declare custom environment bindings, including R2 buckets." />
+<LinkCard title="Dependency Injection" href="/core-concepts/dependency-injection/" description="Inject StorageService into your providers." />

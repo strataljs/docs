@@ -69,13 +69,51 @@ The `provider` option accepts `'cloudflare'` for production or `'sync'` for test
 
 `registerQueue` creates a DI binding that maps the queue name to an `IQueueSender` instance, so you can inject it anywhere in your application.
 
+### Module options
+
+The factory returns a `QueueModuleOptions` object:
+
+```typescript
+interface QueueModuleOptions {
+  provider: 'cloudflare' | 'sync'
+  store?: {
+    binding?: string  // KV namespace binding name. Default: 'CACHE'
+  }
+  idempotency?: {
+    ttl?: number  // Seconds a processed idempotency key is remembered. Default: 86400 (24h)
+  }
+  failedJobs?: {
+    retention?: number  // Age (seconds) past which FailedJobCleanupJob deletes a failed job. Default: 604800 (7d)
+  }
+  maxRetries?: number  // Attempts before a message is stored as a failed job. Default: 3
+}
+```
+
+### KV store binding
+
+The queue subsystem persists idempotency claims and failed jobs to a KV namespace. The `store.binding` option names that namespace and defaults to `CACHE`:
+
+```jsonc
+{
+  "kv_namespaces": [
+    { "binding": "CACHE", "id": "..." }
+  ]
+}
+```
+
+Override `store.binding` only if your KV namespace uses a different binding name. For the `cloudflare` provider, the binding is validated at app boot: if it is missing, `QueueModule` throws a `QueueError` during initialization rather than failing on every queue invocation. The `sync` provider processes inline and never touches the store, so it does not require the binding.
+
+<Aside type="caution">
+  The KV store binding is required for the `cloudflare` provider. Add a `kv_namespaces` entry for it (named `CACHE` by default) before deploying, or your worker fails fast at startup with a `QueueError`.
+</Aside>
+
 ## Type-safe queue names
 
 By default, `QueueName` is typed as `string`. You can narrow it by augmenting the `QueueNames` interface so that `QueueName` becomes a union of the declared keys. Any call to `registerQueue` or `@InjectQueue` with an invalid name will then produce a type error.
 
-The recommended approach is to **derive queue names automatically from your `Cloudflare.Env` bindings** rather than maintaining a separate manual list. A binding named `NOTIFICATIONS_QUEUE` produces the queue name `notifications-queue`, and `ORDER_EVENTS_QUEUE` produces `order-events-queue`. This way you only maintain bindings in one place — your Wrangler config.
+The recommended approach is to **derive queue names automatically from your `Cloudflare.Env` bindings** rather than maintaining a separate manual list. A binding named `NOTIFICATIONS_QUEUE` produces the queue name `notifications-queue`, and `ORDER_EVENTS_QUEUE` produces `order-events-queue`. This way you only maintain bindings in one place - your Wrangler config.
 
-See the [Environment Typing — Typing queue bindings](/guides/environment-typing/#typing-queue-bindings) guide for the full setup, including the TypeScript utility types that perform this conversion.
+See the [Environment Typing - Typing queue bindings](/guides/environment-typing/#typing-queue-bindings) guide for the full setup, including the TypeScript utility types that perform this conversion.
 
 ## Sending messages
 
@@ -100,13 +138,40 @@ export class NotificationService {
 }
 ```
 
-The `dispatch` method accepts a `DispatchMessage` object. You provide `type`, `payload`, and optionally `metadata`. The `id` and `timestamp` fields are generated automatically:
+The `dispatch` method accepts a `DispatchMessage` object (`Omit<QueueMessage, 'id'>`). You provide `type`, `payload`, and optionally `metadata`. The `id` is generated automatically:
 
 | Field | Type | Description |
 | --- | --- | --- |
 | `type` | `string` | Message type used for consumer routing |
 | `payload` | `T` | The message payload (generic) |
-| `metadata` | `object?` | Optional metadata; `locale` is auto-set from the i18n context if not provided |
+| `metadata` | `object?` | Optional metadata; `locale`, `idempotencyKey`, and `binding` are auto-populated if not provided |
+
+## Idempotency
+
+Cloudflare Queues deliver at least once, so a consumer can see the same message more than once. Stratal attaches an idempotency key to every dispatch and skips a message that has already been processed.
+
+If you do not supply `metadata.idempotencyKey`, the sender derives one from a deterministic SHA-256 hash of the message `type` and `payload`. Key ordering in the payload does not matter: the hash uses a key-sorted serialization, so two semantically identical payloads produce the same key. Identical dispatches are therefore deduplicated automatically. Supply your own key to control deduplication explicitly:
+
+```typescript
+// Auto-derived key (hash of type + payload)
+await this.queue.dispatch({
+  type: 'email.send',
+  payload: { to: 'user@example.com', subject: 'Hello' },
+})
+
+// Explicit idempotency key
+await this.queue.dispatch({
+  type: 'order.process',
+  payload: { orderId: '123' },
+  metadata: { idempotencyKey: 'order:123' },
+})
+```
+
+When a message is processed successfully, its key is recorded in the KV store and remembered for `idempotency.ttl` seconds (default 24 hours). A redelivered message whose key is still recorded is acknowledged without re-running the consumer.
+
+<Aside type="note">
+  Delivery is at-least-once with best-effort deduplication, not exactly-once. The processed marker is written only after a handler succeeds, and KV reads are eventually consistent, so a message redelivered concurrently or across isolates can still run more than once. Keep consumer handlers idempotent.
+</Aside>
 
 ## Consuming messages
 
@@ -201,9 +266,9 @@ export class AuditLogConsumer implements IQueueConsumer {
 
   async handle(message: QueueMessage) {
     await this.auditLog.record({
+      id: message.id,
       type: message.type,
       payload: message.payload,
-      timestamp: message.timestamp,
     })
   }
 }
@@ -220,11 +285,12 @@ Every queue message follows the `QueueMessage` interface:
 ```typescript
 interface QueueMessage<T = unknown> {
   id: string          // Auto-generated UUID
-  timestamp: number   // Auto-generated (ms since epoch)
   type: string        // Routing key for consumers
   payload: T          // Your message data
   metadata?: {
-    locale?: string   // Auto-set from i18n context
+    locale?: string          // Auto-set from i18n context
+    idempotencyKey?: string  // Auto-derived from type + payload if omitted
+    binding?: string         // Producer binding the message was dispatched through
     [key: string]: unknown
   }
 }
@@ -232,8 +298,11 @@ interface QueueMessage<T = unknown> {
 
 When you call `dispatch`, the `QueueSender` enriches your message with:
 - A unique `id` via `crypto.randomUUID()`
-- A `timestamp` via `Date.now()`
 - The current `locale` from the i18n service (if not already set in metadata)
+- An `idempotencyKey` derived from the message `type` and `payload` (if not already set in metadata)
+- The `binding` the message was dispatched through, so a failed message can later be re-enqueued to the correct producer
+
+See [Idempotency](#idempotency) for how the derived key deduplicates redelivered messages.
 
 ## The sync provider
 
@@ -271,11 +340,105 @@ When a batch of messages arrives from Cloudflare Queues, `Stratal` calls `app.ha
 2. Creates a request scope so consumers can use request-scoped dependencies.
 3. Iterates over each message in the batch.
 4. Finds matching consumers by message type.
-5. Calls `handle` on each consumer. On success, the message is acknowledged. On failure, `onError` is called and the message is retried.
+5. Calls `handle` on each consumer. On success, the message is acknowledged and its idempotency key is recorded. On failure, `onError` is called and the message is retried until `maxRetries` is exhausted, after which it is recorded as a failed job.
 
 <Aside type="note">
   Messages are routed by their `type` field, not by the queue name. This means consumers from different modules can handle messages from the same queue, as long as they declare the matching message type.
 </Aside>
+
+## Failed job management
+
+When a consumer keeps throwing past the configured `maxRetries` (default 3), Stratal stops retrying, acknowledges the message so Cloudflare does not redeliver it forever, and persists it to the KV store as a `FailedJob`. Failed jobs are kept indefinitely until you retry or purge them, so you can inspect and replay them later.
+
+<Aside type="caution">
+  `maxRetries` counts attempts after the initial delivery, so `maxRetries: 3` means 4 total attempts. Keep it less than or equal to the consumer's `max_retries` in `wrangler.jsonc`. If Cloudflare's `max_retries` is lower, the message is dead-lettered before Stratal records it and it never reaches the failed-job store.
+</Aside>
+
+A failed job captures the original message plus failure context:
+
+```typescript
+interface FailedJob {
+  id: string         // The message id
+  queue: string      // Cloudflare queue name the message was consumed from
+  binding: string    // Producer binding to re-enqueue through on retry
+  type: string
+  consumer: string   // Class name of the consumer that failed
+  attempts: number
+  failedAt: string   // ISO timestamp
+  message: QueueMessage
+  error: { name: string; message: string; stack?: string }
+}
+```
+
+### Inspecting and replaying failed jobs
+
+Use the [Quarry CLI](/core-concepts/quarry-cli/) to work with failed jobs from the command line:
+
+```bash
+# List failed jobs (default limit: 50)
+npx quarry queue:failed
+npx quarry queue:failed --queue=NOTIFICATIONS_QUEUE --limit=100
+
+# Retry a single job by message id, or all of them
+npx quarry queue:retry <message-id>
+npx quarry queue:retry --all
+npx quarry queue:retry --all --queue=NOTIFICATIONS_QUEUE
+
+# Delete a single failed job, or all of them
+npx quarry queue:purge <message-id>
+npx quarry queue:purge --all
+npx quarry queue:purge --all --queue=NOTIFICATIONS_QUEUE
+```
+
+Retrying re-enqueues the stored message through the producer `binding` it was originally dispatched from.
+
+### Automatic cleanup (opt-in cron)
+
+Failed jobs persist indefinitely, so unbounded failures can grow KV usage over time. To bound this, register the `FailedJobCleanupJob` cron, which deletes failed jobs older than `failedJobs.retention` (default 7 days). It is not registered for you:
+
+```typescript
+import { FailedJobCleanupJob, failedJobCleanupJob, QueueModule } from 'stratal/queue'
+
+@Module({
+  imports: [
+    QueueModule.forRootAsync({
+      inject: [DI_TOKENS.CloudflareEnv],
+      useFactory: () => ({
+        provider: 'cloudflare',
+        failedJobs: { retention: 1209600 }, // 14 days
+      }),
+    }),
+  ],
+  jobs: [FailedJobCleanupJob],                 // daily at 00:00 UTC
+  // ...or a custom schedule: jobs: [failedJobCleanupJob('0 3 * * 0')]
+})
+export class AppModule {}
+```
+
+`FailedJobCleanupJob` runs daily at `00:00` UTC. Use `failedJobCleanupJob(schedule)` to bind it to a different cron expression. Either way, add a matching trigger to `wrangler.jsonc` (`"0 0 * * *"` for the default schedule). See [Cron Jobs](/integrations/cron-jobs/) for how the `jobs` array and scheduling work.
+
+### Programmatic access
+
+For custom tooling, inject the `QueueStore` via the `QUEUE_TOKENS.QueueStore` token:
+
+```typescript
+import { Transient, inject } from 'stratal/di'
+import { QUEUE_TOKENS, type QueueStore } from 'stratal/queue'
+
+@Transient()
+export class FailedJobInspector {
+  constructor(
+    @inject(QUEUE_TOKENS.QueueStore) private readonly store: QueueStore,
+  ) {}
+
+  async inspect() {
+    const { keys, cursor } = await this.store.listFailedJobs({ limit: 50 })
+    const job = await this.store.getFailedJob(keys[0].id)
+    await this.store.removeFailedJob(keys[0].id)
+    await this.store.purgeFailedJobs()
+  }
+}
+```
 
 ## Testing
 
@@ -283,7 +446,7 @@ The sync provider processes messages synchronously, so you can write integration
 
 ```typescript
 import { Test, type TestingModule } from '@stratal/testing'
-import { DI_TOKENS } from 'stratal/di'
+import { DI_TOKENS, Transient } from 'stratal/di'
 import { QueueModule, QUEUE_TOKENS } from 'stratal/queue'
 import type { IQueueConsumer, ConsumerRegistry, QueueRegistry } from 'stratal/queue'
 
@@ -303,14 +466,17 @@ describe('Queue Integration', () => {
 
   it('should process messages immediately', async () => {
     const handleFn = vi.fn().mockResolvedValue(undefined)
-    const consumer: IQueueConsumer = {
-      messageTypes: ['user.created'],
-      handle: handleFn,
+
+    @Transient()
+    class TestConsumer implements IQueueConsumer {
+      readonly messageTypes = ['user.created']
+      handle = handleFn
     }
 
-    // Register the mock consumer
+    // Register the consumer class with the message types it handles.
+    // A fresh instance is resolved from the container per message.
     const registry = module.get<ConsumerRegistry>(DI_TOKENS.ConsumerRegistry)
-    registry.register(consumer)
+    registry.register(TestConsumer, ['user.created'])
 
     // Dispatch within a request scope
     await module.runInRequestScope(async () => {
@@ -341,7 +507,7 @@ Because the sync provider calls consumers inline, any error thrown in `handle` p
 
 - **Use descriptive message types.** Prefer hierarchical names like `user.created` or `order.shipped` over vague names like `created` or `update`.
 - **Keep payloads minimal.** Dispatch only IDs or references, then fetch fresh data inside the consumer. This avoids stale-data issues and keeps queue messages small.
-- **Design for idempotency.** Messages may be delivered more than once. Check `message.id` before processing to avoid duplicate side effects.
+- **Design for idempotency.** Stratal deduplicates on the idempotency key, but delivery is best-effort, not exactly-once. Keep handler side effects idempotent, and pass an explicit `metadata.idempotencyKey` when the default hash of `type` plus `payload` is too coarse or too fine.
 - **Separate queues for different domains.** Use dedicated queues (`notifications-queue`, `analytics-queue`, `email-queue`) rather than routing everything through a single global queue.
 
 ## Inspecting consumers
@@ -363,4 +529,5 @@ This outputs a table with the following columns:
 
 - [Modules](/core-concepts/modules/) to learn how the `consumers` array fits into module configuration.
 - [Email](/integrations/email/) to see how the email integration uses queues for async dispatch.
-- [Cron Jobs](/integrations/cron-jobs/) for scheduled task execution.
+- [Cron Jobs](/integrations/cron-jobs/) for scheduled task execution, including the `FailedJobCleanupJob`.
+- [Quarry CLI](/core-concepts/quarry-cli/) for the `queue:failed`, `queue:retry`, and `queue:purge` commands.

@@ -1,0 +1,164 @@
+---
+title: React Hooks
+description: Use the useRoute, useI18n, and useSeo hooks in your React components for type-safe URL generation, translations, and page metadata.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Stratal Inertia ships three React hooks that give your components access to server-side routing, internationalization, and SEO data. All three are available from `@stratal/inertia/react`.
+
+## useRoute
+
+The `useRoute` hook provides type-safe URL generation and route matching inside your React components. It works like Laravel's Ziggy - named routes defined on the server are available on the client without hardcoding paths.
+
+### Prerequisites
+
+Enable route sharing in your module setup:
+
+```typescript
+InertiaModule.forRoot({
+  // ...other options
+  routes: true,
+})
+```
+
+### API
+
+```typescript
+const { route, current } = useRoute()
+```
+
+| Return value | Type | Description |
+| --- | --- | --- |
+| `route(name, params?)` | `(name: string, params?: Record<string, string>) => string` | Generate a URL from a named route with optional parameters |
+| `current()` | `() => string \| null` | Return the current route name, or `null` when no route is matched |
+| `current(name)` | `(name: string) => boolean` | Check if the current page matches a route name. Accepts a dotted wildcard prefix such as `'users.*'`. |
+
+### Example
+
+```tsx
+import { useRoute } from '@stratal/inertia/react'
+
+export default function Navigation() {
+  const { route, current } = useRoute()
+
+  return (
+    <nav>
+      <a
+        href={route('posts.index')}
+        className={current('posts.index') ? 'active' : ''}
+      >
+        Posts
+      </a>
+      <a href={route('posts.show', { id: '123' })}>
+        View Post
+      </a>
+    </nav>
+  )
+}
+```
+
+### Type safety
+
+Route names and their parameters auto-complete in your editor when you generate types with the Quarry CLI:
+
+```bash
+npx quarry route:types
+```
+
+This scans your controllers and produces a type registry so that `route('posts.show', { id: '123' })` is fully type-checked - invalid route names or missing parameters surface as compile-time errors.
+
+## useI18n
+
+The `useI18n` hook exposes translation functions and the active locale to your React components.
+
+### Prerequisites
+
+Enable i18n in your module setup:
+
+```typescript
+InertiaModule.forRoot({
+  // ...other options
+  i18n: {
+    only: ['common', 'posts'],
+  },
+})
+```
+
+<Aside type="note">
+Only message namespaces listed in the `i18n.only` option are sent to the frontend. Omit the `only` option to send all messages.
+</Aside>
+
+### API
+
+```typescript
+const { t, locale } = useI18n()
+```
+
+| Return value | Type | Description |
+| --- | --- | --- |
+| `t(key, params?)` | `(key: string, params?: Record<string, string>) => string` | Translate a message key with optional interpolation parameters |
+| `locale` | `string` | The current locale string (e.g. `'en'`, `'fr'`) |
+
+### Example
+
+```tsx
+import { useI18n } from '@stratal/inertia/react'
+
+export default function Greeting() {
+  const { t, locale } = useI18n()
+
+  return (
+    <div>
+      <p>{t('common.welcome', { name: 'John' })}</p>
+      <span>Current locale: {locale}</span>
+    </div>
+  )
+}
+```
+
+Translation keys use dot notation where the first segment is the namespace and the rest is the path within that namespace's messages. For example, `common.welcome` resolves to the `welcome` key in the `common` namespace.
+
+## useSeo
+
+The `useSeo` hook returns the resolved SEO metadata that the backend shared for the current page. The document head is kept in sync automatically (server injection on the initial paint plus a client runtime that re-syncs on navigation), so reach for this hook only when you want to read the metadata inside a component.
+
+### Prerequisites
+
+Provide SEO data from the server, either app-wide through the `seo` option on `InertiaModule.forRoot()` or per-request with `ctx.seo()` in a controller:
+
+```typescript
+@InertiaGet('/posts/:id')
+async show(ctx: RouterContext) {
+  const post = await this.posts.findOrFail(ctx.param('id'))
+
+  ctx.seo({
+    title: post.title,
+    description: post.excerpt,
+  })
+
+  return ctx.inertia('Posts/Show', { post })
+}
+```
+
+### API
+
+```tsx
+const seo = useSeo()
+```
+
+| Return value | Type | Description |
+| --- | --- | --- |
+| `seo` | `SeoData` | The resolved SEO data for the current page. Returns an empty object when no SEO data was shared. |
+
+### Example
+
+```tsx
+import { useSeo } from '@stratal/inertia/react'
+
+export default function PageTitle() {
+  const seo = useSeo()
+
+  return <h1>{seo.title ?? 'Untitled'}</h1>
+}
+```

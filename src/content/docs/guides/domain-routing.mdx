@@ -1,0 +1,121 @@
+---
+title: Domain Routing
+description: Route requests based on domain patterns to support multi-tenancy, regional subdomains, and custom domain logic.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+Domain routing lets you match routes based on the request's hostname rather than just the URL path. You can extract parameters from subdomain patterns, making it straightforward to build multi-tenant applications, regional endpoints, and custom domain logic.
+
+## Controller-level domain
+
+Apply a domain constraint directly on a controller using the `domain` option in the `@Controller()` decorator. All routes within the controller will only match when the request hostname fits the pattern.
+
+```typescript
+import { Controller, Route, type RouterContext } from 'stratal/router'
+
+@Controller('/dashboard', { domain: '{tenant}.myapp.com' })
+class DashboardController {
+  @Route()
+  index(ctx: RouterContext) {
+    const tenant = ctx.domain('tenant')
+    return ctx.json({ tenant, message: `Welcome to ${tenant}'s dashboard` })
+  }
+}
+```
+
+Parameters wrapped in curly braces (e.g., `{tenant}`) are extracted from the hostname and made available through `ctx.domain()`.
+
+## Router-level domain
+
+For broader control, set the domain constraint at the module level by implementing the `RouteConfigurable` interface. Every controller registered in the module will inherit the domain rule.
+
+```typescript
+import { Module } from 'stratal/module'
+import type { RouteConfigurable, Router } from 'stratal/router'
+
+@Module({
+  controllers: [DashboardController],
+})
+class TenantModule implements RouteConfigurable {
+  configureRoutes(router: Router) {
+    router.domain('{tenant}.myapp.com')
+  }
+}
+```
+
+## Accessing domain parameters
+
+Use `ctx.domain()` inside any route handler to retrieve a captured hostname segment by name.
+
+```typescript
+const tenant = ctx.domain('tenant')
+```
+
+### Multiple parameters
+
+Domain patterns can contain more than one parameter. Each segment between dots is matched independently.
+
+```typescript
+// Pattern: '{region}.{tenant}.example.com'
+// Request: us-east.acme.example.com
+
+const region = ctx.domain('region') // 'us-east'
+const tenant = ctx.domain('tenant') // 'acme'
+```
+
+## Grouping routes with domain and prefix
+
+Use `router.group()` inside `configureRoutes` to scope a set of controllers under a shared domain, prefix, and middleware.
+
+```typescript
+import { Module } from 'stratal/module'
+import type { RouteConfigurable, Router } from 'stratal/router'
+
+@Module({
+  controllers: [DashboardController, SettingsController],
+})
+class TenantModule implements RouteConfigurable {
+  configureRoutes(router: Router) {
+    router
+      .domain('{tenant}.myapp.com')
+      .group([DashboardController, SettingsController], (r) => {
+        r.prefix('/api').middleware(TenantMiddleware)
+      })
+  }
+}
+```
+
+In this example, both `DashboardController` and `SettingsController` are reachable only when the request matches `{tenant}.myapp.com`, all paths are prefixed with `/api`, and `TenantMiddleware` runs before every handler.
+
+## Generating URLs for domain routes
+
+When you generate a URL for a named route that carries a domain pattern, supply the domain parameters in the same object as the path parameters. The generated URL is absolute, with the resolved hostname as an `https://` prefix:
+
+```typescript
+@Route({ name: 'dashboard.index' })
+index(ctx: RouterContext) {
+  const url = ctx.route('dashboard.index', { tenant: 'acme' })
+  // → 'https://acme.myapp.com/dashboard'
+  return ctx.json({ url })
+}
+```
+
+Path parameters, domain parameters, and extra query parameters all flow through the one params object. Keys that match a `{domain}` segment fill the hostname, keys that match a `:path` segment fill the path, and anything left over becomes a query string:
+
+```typescript
+const url = ctx.route('dashboard.show', {
+  tenant: 'acme', // → hostname
+  id: '42', // → path segment
+  ref: 'email', // → query string
+})
+// → 'https://acme.myapp.com/dashboard/42?ref=email'
+```
+
+<Aside type="tip">
+  Domain-route URLs are already absolute because the hostname comes from the pattern, so the `{ absolute: true }` option is unnecessary for them. The configured [trailing-slash](/core-concepts/controllers-and-routing/#trailing-slashes) mode still applies to the path portion.
+</Aside>
+
+<Aside type="caution">
+  Domain routing requires your DNS to point wildcard subdomains (`*.myapp.com`) to your Cloudflare Worker. Configure this in your Cloudflare dashboard under **Custom Domains** or **Routes**.
+</Aside>

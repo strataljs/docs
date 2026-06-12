@@ -3,9 +3,9 @@ title: Lifecycle Hooks
 description: OnInitialize and OnShutdown interfaces and their use cases.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-Lifecycle hooks let modules run code at specific points during the application lifecycle. Stratal provides two hooks: one that fires after module initialization and one that fires during shutdown.
+Lifecycle hooks let modules run code at specific points during the application lifecycle. Stratal provides two module hooks: one that fires after module initialization and one that fires during shutdown. Individual providers can also opt into automatic cleanup by implementing a disposal hook.
 
 ## OnInitialize
 
@@ -76,6 +76,71 @@ Common use cases for `onShutdown`:
 - Flush pending writes
 - Clean up temporary resources
 - Deregister from external services
+
+## Provider disposal
+
+`onShutdown` runs on module classes. Individual providers can release their own resources by implementing a disposal hook on the provider itself. When the application shuts down, the container walks every instance it created and calls its disposal hook, so services that hold timers, sockets, or connection pools clean up without the owning module having to resolve and tear them down by hand.
+
+The container recognizes three forms. If more than one is present, it calls them in this order of precedence:
+
+<Tabs>
+  <TabItem label="Symbol.asyncDispose">
+
+```typescript
+import { Singleton } from 'stratal/di'
+
+@Singleton()
+export class ConnectionPool {
+  private readonly connections: Connection[] = []
+
+  async [Symbol.asyncDispose]() {
+    await Promise.all(this.connections.map((c) => c.close()))
+  }
+}
+```
+
+  </TabItem>
+  <TabItem label="Symbol.dispose">
+
+```typescript
+import { Singleton } from 'stratal/di'
+
+@Singleton()
+export class Heartbeat {
+  private readonly timer = setInterval(() => this.ping(), 30_000)
+
+  [Symbol.dispose]() {
+    clearInterval(this.timer)
+  }
+}
+```
+
+  </TabItem>
+  <TabItem label="dispose()">
+
+```typescript
+import { Singleton } from 'stratal/di'
+
+@Singleton()
+export class MetricsBuffer {
+  async dispose() {
+    await this.flush()
+  }
+}
+```
+
+  </TabItem>
+</Tabs>
+
+When the application tears down, the container disposes instances in reverse creation order, so a service can still safely use dependencies that were constructed before it. A disposal hook may be synchronous or async; the container awaits each one before moving on.
+
+<Aside type="tip">
+  `Symbol.asyncDispose` and `Symbol.dispose` are the standard JavaScript disposal symbols, so a provider that implements them also works with `using` and `await using` declarations elsewhere in your code. Use the plain `dispose()` method when you prefer a named method.
+</Aside>
+
+<Aside type="note">
+  Disposal applies to instances the container created and cached: singletons and request-cached instances. It runs on application shutdown and, during local development, whenever the dev server hot reloads and replaces the running application. This makes it the right place to release long-lived resources so they are not leaked across reloads.
+</Aside>
 
 ## ModuleContext
 

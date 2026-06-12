@@ -1,333 +1,336 @@
 ---
 title: Error Handling
-description: Build structured error responses with numeric error codes, i18n-ready messages, and a global error handler that keeps your API consistent.
+description: Throw structured errors, map them to HTTP status codes, translate messages with i18n, and customize reporting and rendering through a configurable exception handler.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, Tabs, TabItem, Steps, LinkCard, CardGrid, Card } from '@astrojs/starlight/components';
 
-Stratal provides a structured error handling system built around error codes, translatable messages, and automatic HTTP status mapping. Every error thrown in your application flows through a global handler that logs it, translates its message, and returns a consistent JSON response.
+Stratal routes every error through a single exception pipeline. You throw a typed error, and the framework reports it (logging, external services), renders it (JSON, HTML, or a custom response), and negotiates the response format based on what the client accepts. You configure the pipeline by extending `ExceptionHandler`.
 
-## The error response format
+## Error classes
 
-All errors returned by Stratal follow this structure:
+Three classes from `stratal/errors` form the hierarchy. `ApplicationError` is the base, `HttpException` extends it to carry a status code, and `InternalError` is what the framework wraps unknown throwables in.
+
+<Tabs>
+  <TabItem label="ApplicationError">
+The base class for all errors. It is not abstract, so you can instantiate it directly or extend it. Every instance carries a `timestamp` and supports the standard `cause` chain.
+
+```typescript
+import { ApplicationError } from 'stratal/errors'
+
+throw new ApplicationError('Something went wrong')
+
+// Chain an underlying cause
+throw new ApplicationError('Failed to load profile', originalError)
+```
+
+An `ApplicationError` resolves to HTTP **500** unless a subclass specifies otherwise. Use plain, human-readable messages.
+  </TabItem>
+
+  <TabItem label="HttpException">
+Extends `ApplicationError` with a specific HTTP status code. This is the base for any non-500 error.
+
+```typescript
+import { HttpException, abort } from 'stratal/errors'
+
+throw new HttpException(404, 'Resource not found')
+throw new HttpException(422, 'Invalid input')
+
+// abort() throws an HttpException and is typed as `never`
+abort(403, 'Access denied')
+```
+
+When you omit the message, `HttpException` fills in a standard status text (for example `Not Found` for 404).
+  </TabItem>
+
+  <TabItem label="InternalError">
+A 500 error the framework creates automatically when something that is not an `ApplicationError` is thrown (for example a `TypeError`). The original throwable is preserved as the `cause`, so it still appears in your logs.
+
+```typescript
+import { InternalError } from 'stratal/errors'
+
+throw new InternalError(originalError)
+```
+
+You rarely construct this yourself: it exists so the pipeline can normalize any throwable into an `ApplicationError`.
+  </TabItem>
+</Tabs>
+
+<Aside type="note">
+  The HTTP status comes from the error class, not from a numeric code registry. `HttpException` (and its subclasses) carry an `httpStatus`. Anything else resolves to 500.
+</Aside>
+
+## Custom error classes
+
+Define your own errors by extending the class that matches the status you want.
+
+### Non-500 errors: extend `HttpException`
+
+Bake the status into the subclass so call sites stay clean:
+
+```typescript
+import { HttpException } from 'stratal/errors'
+
+export class NoteNotFoundError extends HttpException {
+  constructor() {
+    super(404, 'Note not found')
+  }
+}
+
+export class DuplicateEmailError extends HttpException {
+  constructor(email: string) {
+    super(409, `A user with email ${email} already exists`)
+  }
+}
+```
+
+Throw them anywhere: services, controllers, guards, or middleware. The pipeline catches them at every level.
+
+```typescript
+import { Transient } from 'stratal/di'
+
+@Transient()
+export class NotesService {
+  async findById(id: string): Promise<Note> {
+    const note = await this.repository.findById(id)
+
+    if (!note) {
+      throw new NoteNotFoundError()
+    }
+
+    return note
+  }
+}
+```
+
+### 500 errors: extend `ApplicationError`
+
+For unexpected server-side failures, extend `ApplicationError` and chain the underlying cause:
+
+```typescript
+import { ApplicationError } from 'stratal/errors'
+
+export class PaymentProcessingError extends ApplicationError {
+  constructor(reason: string, cause?: unknown) {
+    super(`Payment processing failed: ${reason}`, cause)
+  }
+}
+```
+
+<Aside type="tip">
+  Pass the original error as the `cause` argument. The default reporter walks the full cause chain (and `AggregateError.errors`) when it logs, so you keep the root-cause trace without leaking it to the client.
+</Aside>
+
+## The error response
+
+For non-HTML requests, the handler returns a JSON `ErrorResponse`:
 
 ```json
 {
-  "code": 1003,
-  "message": "Validation error",
-  "timestamp": "2026-02-26T12:00:00.000Z",
-  "metadata": {
-    "issues": [...]
+  "message": "Note not found",
+  "timestamp": "2026-06-11T12:00:00.000Z",
+  "stack": "..."
+}
+```
+
+| Field       | Description                                                       |
+| ----------- | ---------------------------------------------------------------- |
+| `message`   | Human-readable message (translated when i18n is configured)      |
+| `timestamp` | ISO 8601 timestamp captured when the error was constructed       |
+| `stack`     | Stack trace, included only when `ENVIRONMENT` is `development`    |
+
+### Production hardening
+
+For server errors (status >= 500) outside development, the handler replaces the message with a generic status text (for example `Internal Server Error`) before sending the response. The real message is still logged, just not exposed to the client. Errors with a 4xx status keep their actual message in every environment.
+
+<Aside type="caution">
+  Stack traces are only present in the response when `ENVIRONMENT` is `development`. They never reach clients in staging or production.
+</Aside>
+
+## The exception pipeline
+
+Every error flows through three phases in order:
+
+<Steps>
+1. **Normalize**: if the throwable is already an `ApplicationError`, it passes through. Anything else is wrapped in an `InternalError`.
+
+2. **Report**: the error is logged (and optionally sent to external services). This runs in the background via `waitUntil`, so reporting never blocks the response.
+
+3. **Render**: the error is turned into a `Response`. Content negotiation decides between JSON, a custom response, or an HTML error page. Registered `respond` callbacks then post-process the final `Response`.
+</Steps>
+
+### Default severity
+
+When you do not override the level, the handler picks log severity from the resolved status:
+
+| Status   | Severity |
+| -------- | -------- |
+| >= 500   | `error`  |
+| >= 400   | `warn`   |
+
+## Customizing the handler
+
+Create an exception handler by extending `ExceptionHandler` and implementing `register()`. Register your reporting, rendering, and logging customizations there.
+
+```typescript
+import { ExceptionHandler } from 'stratal/errors'
+import { Transient } from 'stratal/di'
+
+@Transient()
+export class AppExceptionHandler extends ExceptionHandler {
+  register(): void {
+    // Report specific errors to an external service
+    this.reportable(PaymentError, (error, context) => {
+      sentry.captureException(error)
+    })
+
+    // Custom rendering for a specific error
+    this.renderable(MaintenanceError, (error, context) => {
+      return new Response('Service temporarily unavailable', { status: 503 })
+    })
+
+    // Suppress logging for expected errors
+    this.dontReport([NoteNotFoundError])
+
+    // Override log severity for a class
+    this.level(RecordNotFoundError, 'warn')
+
+    // Add global context to every error log entry
+    this.context(() => ({
+      region: this.env.CF_REGION,
+      deployId: this.env.DEPLOY_ID,
+    }))
+
+    // Post-process every error response
+    this.respond((response, error, context) => {
+      response.headers.set('X-Request-Id', crypto.randomUUID())
+      return response
+    })
+
+    // Render a custom HTML page for a given status (browser / Inertia first loads)
+    this.errorPage((errorResponse, status, context, error) => {
+      if (status === 503) {
+        return new Response(maintenanceHtml(), {
+          status,
+          headers: { 'content-type': 'text/html; charset=utf-8' },
+        })
+      }
+    })
   }
 }
 ```
 
-| Field       | Description                                                |
-| ----------- | ---------------------------------------------------------- |
-| `code`      | Numeric error code from the error code registry            |
-| `message`   | Translated, human-readable error message                   |
-| `timestamp` | ISO 8601 timestamp when the error occurred                 |
-| `metadata`  | Optional structured data (validation issues, field names)  |
-| `stack`     | Stack trace, included only in development                  |
-
-## ApplicationError
-
-All custom errors extend the `ApplicationError` base class. It ties together a message key for i18n, a numeric error code, and optional metadata:
+Register it on the `Stratal` constructor:
 
 ```typescript
-import { ApplicationError, ERROR_CODES } from 'stratal/errors'
-
-export class InsufficientBalanceError extends ApplicationError {
-  constructor(balance: number, required: number) {
-    super(
-      'errors.insufficientBalance',      // i18n message key
-      ERROR_CODES.BUSINESS.INSUFFICIENT_BALANCE, // numeric error code
-      { balance, required },              // metadata for logging/interpolation
-    )
-  }
-}
-```
-
-Throw it from any service or controller:
-
-```typescript
-throw new InsufficientBalanceError(50, 100)
-```
-
-The global error handler catches it, translates the message key, and returns the proper HTTP response.
-
-### Constructor parameters
-
-| Parameter  | Type                      | Description                                         |
-| ---------- | ------------------------- | --------------------------------------------------- |
-| `i18nKey`  | `MessageKeys`             | A type-safe i18n message key (e.g., `'errors.userNotFound'`) |
-| `code`     | `number`                  | A numeric error code from `ERROR_CODES`             |
-| `metadata` | `Record<string, unknown>` | Optional data for logging and message interpolation |
-
-## Error codes
-
-Stratal organizes error codes by category, with each range mapping to an HTTP status code:
-
-| Range       | Category        | HTTP Status           |
-| ----------- | --------------- | --------------------- |
-| 1000-1999   | Validation      | 400 Bad Request       |
-| 2000-2999   | Database        | 500 (varies)          |
-| 3000-3099   | Authentication  | 401 Unauthorized      |
-| 3100-3199   | Authorization   | 403 Forbidden         |
-| 4000-4099   | Resource        | 404 Not Found         |
-| 4100-4199   | Conflict        | 409 Conflict          |
-| 5000-5999   | Business Logic  | 422 Unprocessable Entity |
-| 9000-9999   | System/Internal | 500 Internal Server Error |
-
-Access them through the `ERROR_CODES` object:
-
-```typescript
-import { ERROR_CODES } from 'stratal/errors'
-
-ERROR_CODES.VALIDATION.GENERIC         // 1000
-ERROR_CODES.VALIDATION.REQUIRED_FIELD  // 1001
-ERROR_CODES.VALIDATION.SCHEMA_VALIDATION // 1003
-
-ERROR_CODES.AUTH.INVALID_CREDENTIALS   // 3000
-ERROR_CODES.AUTH.SESSION_EXPIRED       // 3001
-ERROR_CODES.AUTH.INVALID_TOKEN         // 3003
-
-ERROR_CODES.AUTHZ.FORBIDDEN           // 3100
-ERROR_CODES.AUTHZ.ACCESS_DENIED       // 3101
-ERROR_CODES.AUTHZ.INSUFFICIENT_PERMISSIONS // 3102
-
-ERROR_CODES.RESOURCE.NOT_FOUND        // 4000
-ERROR_CODES.RESOURCE.CONFLICT         // 4100
-ERROR_CODES.RESOURCE.ALREADY_EXISTS   // 4101
-
-ERROR_CODES.DATABASE.RECORD_NOT_FOUND // 2001 -> 404
-ERROR_CODES.DATABASE.UNIQUE_CONSTRAINT // 2002 -> 409
-
-ERROR_CODES.SYSTEM.INTERNAL_ERROR     // 9000
+export default new Stratal({
+  module: AppModule,
+  exceptionHandler: AppExceptionHandler,
+})
 ```
 
 <Aside type="note">
-  The HTTP status code is derived automatically from the error code range. You never set status codes manually when using `ApplicationError`.
+  Without a custom handler, Stratal uses a built-in `DefaultExceptionHandler` whose `register()` is empty, so every error flows through the default pipeline: severity-based logging, i18n translation, and JSON serialization.
 </Aside>
 
-### Notable exceptions in status mapping
+### Configuration methods
 
-A few error codes within the database range have specific status overrides:
+| Method | Purpose |
+| --- | --- |
+| `reportable(ErrorClass, callback)` | Custom reporting for a class. Returns a `Reportable`: chain `.stop()` to skip default logging. |
+| `renderable(ErrorClass, callback)` | Custom rendering. Return a `Response`, an `ErrorResponse`, or `undefined` to fall through to the default renderer. |
+| `errorPage(callback)` | Render the HTML error page for requests that accept `text/html`. Callbacks run in registration order, first non-`undefined` wins. |
+| `dontReport([...classes])` | Suppress logging for the listed error classes. |
+| `level(ErrorClass, severity)` | Override log severity (`'debug' \| 'info' \| 'warn' \| 'error'`). |
+| `context(callback)` | Merge key-value pairs into every error log entry. |
+| `respond(callback)` | Transform the final `Response` before it is sent. |
+| `resolve(token)` | Resolve a dependency from the DI container inside callbacks. |
 
-| Error Code                        | HTTP Status | Reason                  |
-| --------------------------------- | ----------- | ----------------------- |
-| `DATABASE.RECORD_NOT_FOUND` (2001) | 404         | Record does not exist   |
-| `DATABASE.UNIQUE_CONSTRAINT` (2002) | 409         | Duplicate entry         |
+When several `reportable` or `renderable` entries match the same error, the most specific subclass wins.
 
-## Creating custom errors
+### Stop default reporting
 
-Define errors by extending `ApplicationError`:
-
-```typescript
-import { ApplicationError, ERROR_CODES } from 'stratal/errors'
-
-export class UserNotFoundError extends ApplicationError {
-  constructor(userId: string) {
-    super(
-      'errors.userNotFound',
-      ERROR_CODES.RESOURCE.NOT_FOUND,
-      { userId },
-    )
-  }
-}
-
-export class DuplicateEmailError extends ApplicationError {
-  constructor(email: string) {
-    super(
-      'errors.duplicateEmail',
-      ERROR_CODES.RESOURCE.ALREADY_EXISTS,
-      { field: 'email' },
-    )
-  }
-}
-
-export class SessionExpiredError extends ApplicationError {
-  constructor() {
-    super(
-      'errors.sessionExpired',
-      ERROR_CODES.AUTH.SESSION_EXPIRED,
-    )
-  }
-}
-```
-
-Then throw them anywhere in your application:
+`reportable()` returns a handle whose `.stop()` prevents the default logger from also reporting the error:
 
 ```typescript
-@Transient()
-export class UsersService {
-  async findById(id: string): Promise<User> {
-    const user = await this.repository.findById(id)
+this.reportable(ExternalApiError, (error) => {
+  externalLogger.log(error)
+}).stop()
+```
 
-    if (!user) {
-      throw new UserNotFoundError(id)
-    }
+## Exception context
 
-    return user
+Every `reportable`, `renderable`, and `respond` callback receives an `ExceptionContext`, a discriminated union you narrow on `context.type` to learn where the error came from.
+
+```typescript
+this.renderable(PaymentError, (error, context) => {
+  if (context.type === 'http') {
+    return context.ctx.json({ message: 'Payment failed' }, 500)
   }
-
-  async create(data: CreateUserDto): Promise<User> {
-    const existing = await this.repository.findByEmail(data.email)
-
-    if (existing) {
-      throw new DuplicateEmailError(data.email)
-    }
-
-    return this.repository.create(data)
-  }
-}
+  // Non-HTTP contexts: return undefined to use default rendering
+})
 ```
 
-You do not need to catch these in your controller. The global error handler catches them automatically and returns the right HTTP status code and response body.
+| `context.type` | Available properties |
+| --- | --- |
+| `'http'` | `ctx` (the `RouterContext`) |
+| `'queue'` | `queueName` |
+| `'cron'` | (none) |
+| `'cli'` | `commandName` |
 
-## The global error handler
+This is what lets one handler serve HTTP requests, queue consumers, cron jobs, and CLI commands with the right behavior for each.
 
-Stratal registers a `GlobalErrorHandler` that intercepts every error in the application. It handles two categories:
+## Content negotiation
 
-**Known errors** (`ApplicationError` instances) are logged, translated, and serialized:
+The renderer inspects the request's `Accept` header:
 
-```
-throw new UserNotFoundError('user-123')
+- **`text/html` accepted**: the handler walks the registered `errorPage` callbacks (first non-`undefined` wins) and falls back to a built-in minimal HTML page.
+- **Otherwise**: the handler returns the JSON `ErrorResponse`.
 
-// Produces:
-{
-  "code": 4000,
-  "message": "User not found",       // translated from 'errors.userNotFound'
-  "timestamp": "2026-02-26T12:00:00.000Z",
-  "metadata": {}                     // userId filtered out (internal)
-}
-// HTTP 404 (derived from code 4000)
-```
+You can shape HTML rendering at three levels:
 
-**Unknown errors** (anything that is not an `ApplicationError`) are wrapped in an `InternalError` with code `9000`:
+<CardGrid>
+  <Card title="errorPage(cb)" icon="document">
+    Register dynamic, per-status HTML rendering in `register()`.
+  </Card>
+  <Card title="renderDefaultHtml()" icon="seti:html">
+    Override this method for a branded static fallback page.
+  </Card>
+  <Card title="wantsHtml()" icon="setting">
+    Override to change how content negotiation decides on HTML.
+  </Card>
+</CardGrid>
 
-```
-throw new TypeError('Cannot read property of undefined')
-
-// Produces:
-{
-  "code": 9000,
-  "message": "Internal server error",
-  "timestamp": "2026-02-26T12:00:00.000Z"
-}
-// HTTP 500
-```
-
-<Aside type="caution">
-  Unknown errors never expose their original message or stack trace to the client. This prevents leaking implementation details in production.
+<Aside type="tip">
+  HTML rendering applies only to the `http` exception context. Queue, cron, and CLI errors always render through the default path.
 </Aside>
 
-### Log severity
+## Error messages and i18n
 
-The global error handler logs errors with different severity levels based on the error code range:
-
-| Code Range   | Severity | Example                    |
-| ------------ | -------- | -------------------------- |
-| 1000-1999    | INFO     | Validation errors          |
-| 3000-4999    | WARN     | Auth, authorization, resource errors |
-| 5000-5999    | WARN     | Business logic errors      |
-| 2000-2999    | ERROR    | Database errors            |
-| 9000+        | ERROR    | System and internal errors |
-
-## Metadata filtering
-
-Not all metadata should be visible to API consumers. `ApplicationError` automatically filters metadata before including it in the response. Only these fields are exposed:
-
-- `issues` (validation error details)
-- `fields` (constraint violation field list)
-- `field` (single field identifier)
-
-Everything else (like `userId`, `reason`, `controllerName`) is available in logs but stripped from the response. This means you can pass rich debugging context in metadata without worrying about leaking it.
+Error messages are plain strings. When you want them translated, resolve them through the i18n service. Use `withI18n()` to translate inside an error class or anywhere in request-scoped code:
 
 ```typescript
-// In your error class
-throw new ApplicationError(
-  'errors.forbidden',
-  ERROR_CODES.AUTHZ.FORBIDDEN,
-  {
-    userId: 'user-123',    // filtered out of response, available in logs
-    reason: 'IP blocked',  // filtered out of response, available in logs
-    field: 'accessToken',  // included in response
-  },
-)
-```
+import { HttpException } from 'stratal/errors'
+import { withI18n } from 'stratal/i18n'
 
-## Validation errors
-
-Stratal has built-in handling for Zod validation failures. When a `@Route` schema rejects a request, a `SchemaValidationError` is created automatically. You do not need to write any error handling code for this.
-
-The validation error response includes an `issues` array:
-
-```json
-{
-  "code": 1003,
-  "message": "Validation error",
-  "timestamp": "2026-02-26T12:00:00.000Z",
-  "metadata": {
-    "issues": [
-      {
-        "path": "email",
-        "message": "Invalid email address",
-        "code": "invalid_format"
-      }
-    ]
+export class NoteNotFoundError extends HttpException {
+  constructor(noteId: string) {
+    super(404, withI18n('notes.errors.notFound', { noteId }))
   }
 }
 ```
 
-See the [Validation guide](/guides/validation/) for more on schema validation.
+`withI18n(key, params?)` returns the translated string for the current request's locale, or the key itself when called outside a request context. Validation errors are translated automatically through the i18n Zod error map.
 
-## Error handling with i18n
+<LinkCard
+  title="Internationalization"
+  href="/integrations/i18n/"
+  description="How message keys, ICU interpolation, and locale detection power translated error messages."
+/>
 
-When the [Internationalization](/integrations/i18n/) module is configured, error messages are automatically translated based on the request locale. The `message` parameter on `ApplicationError` is treated as an i18n message key, and metadata values can be used for interpolation:
+## Checking for an ApplicationError
 
-```typescript
-// Message key: 'errors.insufficientBalance'
-// Translation: 'Your balance of {balance} is less than the required {required}'
-
-throw new InsufficientBalanceError(50, 100)
-
-// Response:
-{
-  "code": 5001,
-  "message": "Your balance of 50 is less than the required 100"
-}
-```
-
-If no translation is found, the raw message key is returned as-is.
-
-## Throwing errors from controllers
-
-You can throw `ApplicationError` subclasses from controllers, services, guards, or middleware. The global error handler catches them at every level:
-
-```typescript
-@Controller('/api/users')
-export class UsersController implements IController {
-  constructor(
-    @inject(UsersService) private readonly usersService: UsersService,
-  ) {}
-
-  @Route({
-    params: z.object({ id: z.string().uuid() }),
-    response: userResponseSchema,
-  })
-  async show(ctx: RouterContext) {
-    const id = ctx.param('id')
-    // If findById throws UserNotFoundError, the global handler returns 404
-    const user = await this.usersService.findById(id)
-    return ctx.json(user)
-  }
-}
-```
-
-## Checking if an error is an ApplicationError
-
-Use the `isApplicationError` type guard when you need to distinguish framework errors from unexpected ones:
+Use the `isApplicationError` type guard to tell framework errors apart from unexpected throwables:
 
 ```typescript
 import { isApplicationError } from 'stratal/errors'
@@ -336,10 +339,8 @@ try {
   await someOperation()
 } catch (error) {
   if (isApplicationError(error)) {
-    // error.code, error.message, error.metadata are available
-    console.log('Known error:', error.code)
+    console.log('Known error:', error.message, error.timestamp)
   } else {
-    // Unexpected error
     console.error('Unexpected:', error)
   }
 }
@@ -348,5 +349,5 @@ try {
 ## Next steps
 
 - [Validation](/guides/validation/) for automatic request validation with Zod.
-- [Guards](/guides/guards/) to learn about access control and how guard failures produce errors.
+- [Guards](/guides/guards/) to learn how guard failures produce errors.
 - [Internationalization](/integrations/i18n/) for translating error messages across locales.

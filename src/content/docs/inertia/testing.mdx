@@ -1,0 +1,115 @@
+---
+title: Testing
+description: Test Inertia pages, props, flash data, and precognition responses with assertion helpers.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@stratal/inertia/testing` augments the `TestResponse` object with assertion methods for verifying Inertia pages, props, flash data, and precognition responses.
+
+## Setup
+
+Import the testing side-effect in your test files or global setup:
+
+```typescript
+import '@stratal/inertia/testing'
+```
+
+<Aside type="caution">
+The `@stratal/inertia/testing` import must appear before any test that uses Inertia assertions. A good place is your `vitest.setup.ts` file.
+</Aside>
+
+## Assertion methods
+
+Once the testing module is imported, the following methods are available on every `TestResponse`:
+
+| Method | Description |
+| --- | --- |
+| `assertInertia(callback?)` | Assert the response is an Inertia page. Optionally pass a callback to inspect the page object. |
+| `assertInertiaComponent(name)` | Assert the rendered component matches the given name. |
+| `assertInertiaProp(path, expected)` | Assert a prop value at the given path. Supports dot notation. |
+| `assertInertiaPropExists(path)` | Assert a prop exists at the given path. |
+| `assertInertiaPropMissing(path)` | Assert a prop does not exist at the given path. |
+| `assertInertiaUrl(url)` | Assert the page URL matches the given string. |
+| `assertInertiaVersion(version)` | Assert the asset version matches the given string. |
+| `assertInertiaFlash(key, value)` | Assert flash data contains the given key and value. |
+| `assertInertiaDeferredProp(prop, group)` | Assert a deferred prop exists and belongs to the given group. |
+| `assertInertiaMergeProp(prop)` | Assert a prop is marked as mergeable. |
+| `assertInertiaSharedProp(prop)` | Assert a shared prop is present on the page. |
+| `assertSuccessfulPrecognition()` | Assert the response is a successful precognition response (204 status). |
+| `assertPrecognitionValidationErrors(errors?)` | Assert the response contains precognition validation errors (422 status). Optionally verify specific error fields. |
+
+## Example: testing a page render
+
+```typescript
+import { Test } from '@stratal/testing'
+import '@stratal/inertia/testing'
+import { PostsModule } from '../src/posts.module'
+
+describe('PostsController', () => {
+  it('renders the index page', async () => {
+    const module = await Test.createTestingModule({
+      imports: [PostsModule],
+    }).compile()
+
+    const response = await module.http.get('/posts').send()
+
+    await response.assertInertia()
+    await response.assertInertiaComponent('posts/Index')
+    await response.assertInertiaPropExists('posts')
+  })
+})
+```
+
+## Example: testing flash data and validation
+
+```typescript
+import { Test } from '@stratal/testing'
+import '@stratal/inertia/testing'
+import { PostsModule } from '../src/posts.module'
+
+describe('PostsController', () => {
+  it('validates post creation', async () => {
+    const module = await Test.createTestingModule({
+      imports: [PostsModule],
+    }).compile()
+
+    const response = await module.http
+      .post('/posts')
+      .withBody({})
+      .send()
+
+    await response.assertInertiaFlash('errors', {
+      title: expect.any(String),
+    })
+  })
+})
+```
+
+## Example: testing precognition
+
+Precognition lets you validate form data before submission. Use the precognition assertions to verify that your validation rules work correctly:
+
+```typescript
+it('validates with precognition', async () => {
+  const module = await Test.createTestingModule({
+    imports: [PostsModule],
+  }).compile()
+
+  const valid = await module.http
+    .post('/posts')
+    .withHeaders({ Precognition: 'true' })
+    .withBody({ title: 'My Post', content: 'Hello world' })
+    .send()
+  await valid.assertSuccessfulPrecognition()
+
+  const invalid = await module.http
+    .post('/posts')
+    .withHeaders({ Precognition: 'true' })
+    .withBody({})
+    .send()
+  await invalid.assertPrecognitionValidationErrors({
+    title: expect.any(String),
+  })
+})
+```

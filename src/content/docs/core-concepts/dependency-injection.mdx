@@ -70,18 +70,28 @@ Scopes control how often a new instance is created when a dependency is resolved
 | `Singleton`   | One shared instance for the entire application | Configuration, caches, connection pools     |
 | `Request`     | One instance per HTTP request                | Services that hold per-request state         |
 
-Set the scope when registering a provider:
+Set the scope with the decorator on the class:
+
+```typescript
+import { Singleton, Request, Transient } from 'stratal/di'
+
+@Singleton()
+export class ConfigService {}
+
+@Request()
+export class RequestLogger {}
+
+@Transient() // Transient is the default
+export class UsersService {}
+```
+
+Modules then register the classes without repeating the scope:
 
 ```typescript
 import { Module } from 'stratal/module'
-import { Scope } from 'stratal/di'
 
 @Module({
-  providers: [
-    { provide: ConfigService, useClass: ConfigService, scope: Scope.Singleton },
-    { provide: RequestLogger, useClass: RequestLogger, scope: Scope.Request },
-    UsersService, // defaults to Transient
-  ],
+  providers: [ConfigService, RequestLogger, UsersService],
 })
 export class AppModule {}
 ```
@@ -92,7 +102,7 @@ export class AppModule {}
 
 ## Injection tokens
 
-When you inject a concrete class, TypeScript's type metadata is enough for the container to find the right provider. But when you depend on an abstraction (an interface or a value), you need a **token** to identify it.
+Every constructor parameter is resolved through the token you pass to `@inject()`. When you depend on a concrete class, the class itself is the token, as in `@inject(UsersService)`. When you depend on an abstraction such as an interface or a value, there is no class to point at, so you create a **token** to identify it.
 
 Create tokens using Symbols:
 
@@ -140,7 +150,9 @@ Commonly used tokens include:
 | `DI_TOKENS.ExecutionContext`   | The Cloudflare `ExecutionContext`              |
 | `DI_TOKENS.Container`          | The DI container itself                       |
 | `DI_TOKENS.Application`        | The Stratal application instance              |
-| `DI_TOKENS.ErrorHandler`       | The registered error handler                  |
+| `DI_TOKENS.ModuleRegistry`     | The module registry                           |
+| `DI_TOKENS.LazyModuleLoader`   | The lazy module loader                        |
+| `DI_TOKENS.ExceptionHandler`   | The registered exception handler              |
 | `DI_TOKENS.Database`           | The database service (if configured)          |
 | `DI_TOKENS.Queue`              | The queue manager                             |
 | `DI_TOKENS.ConsumerRegistry`   | The queue consumer registry                   |
@@ -152,8 +164,8 @@ Commonly used tokens include:
 
 Stratal uses a two-tier container architecture:
 
-1. **Global container** — created once when the application boots. It holds singleton providers and serves as the parent for all request containers.
-2. **Request container** — a child container created for each incoming HTTP request. It inherits all registrations from the global container and adds request-scoped instances.
+1. **Global container**: created once when the application boots. It holds singleton providers and serves as the parent for all request containers.
+2. **Request container**: a child container created for each incoming HTTP request. It inherits all registrations from the global container and adds request-scoped instances.
 
 When you resolve a transient or singleton provider, the global container handles it. When you resolve a request-scoped provider, the request container creates a fresh instance that lives only for the duration of that request.
 
@@ -256,7 +268,36 @@ export class BackgroundTaskService {
 }
 ```
 
+## Break circular dependencies with lazy()
+
+When two services depend on each other, the container cannot decide which to construct first. Wrap one side of the cycle with `lazy()` so its token is resolved on first access rather than at construction time:
+
+```typescript
+import { Transient, inject, lazy } from 'stratal/di'
+
+@Transient()
+export class OrdersService {
+  constructor(
+    @inject(lazy(() => InvoicesService)) private readonly invoices: InvoicesService,
+  ) {}
+}
+
+@Transient()
+export class InvoicesService {
+  constructor(
+    @inject(OrdersService) private readonly orders: OrdersService,
+  ) {}
+}
+```
+
+`lazy()` takes a factory that returns the constructor. The container defers resolving the wrapped token until the dependency is actually used, which lets both classes finish constructing.
+
+<Aside type="caution">
+  Reach for `lazy()` only to untangle a genuine circular dependency. If you find yourself needing it often, that is usually a sign two services should be merged or a shared piece extracted into a third.
+</Aside>
+
 ## Next steps
 
 - [Providers](/core-concepts/providers/) for advanced registration patterns like factories, aliases, and conditional bindings.
 - [Modules](/core-concepts/modules/) to see how providers are organized across modules.
+- [Lifecycle Hooks](/core-concepts/lifecycle-hooks/) for disposing container-managed resources on shutdown.

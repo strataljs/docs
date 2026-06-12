@@ -1,0 +1,91 @@
+---
+title: Signed URLs
+description: Generate and verify tamper-proof signed URLs for secure, expiring links to your application routes.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+Signed URLs attach an HMAC-SHA256 signature (and an optional expiration timestamp) as query parameters to a URL. This lets you share links that cannot be tampered with -- if anyone modifies the path, query string, or expiration, the signature check fails.
+
+Common use cases include temporary download links, email verification, password reset flows, and shareable preview links.
+
+## Prerequisites
+
+Set an `APP_SECRET` environment variable in your Worker. This value is used as the HMAC signing key.
+
+```toml
+# wrangler.toml
+[vars]
+APP_SECRET = "your-secret-key"
+```
+
+## Generating signed URLs
+
+Call `ctx.signedUrl()` from any route handler to produce a signed link to a named route. The method accepts the route name, route parameters, and an options object.
+
+```typescript
+import { Controller, Route, type RouterContext } from 'stratal/router'
+
+@Controller('/files')
+class FilesController {
+  @Route({ name: 'files.download' })
+  async show(ctx: RouterContext) {
+    const url = await ctx.signedUrl('files.download', { id: '123' }, {
+      expiresIn: 3600, // 1 hour
+    })
+    return ctx.json({ downloadUrl: url })
+  }
+}
+```
+
+### Options
+
+| Option | Type | Description |
+|---|---|---|
+| `expiresIn` | `number` | Time in seconds until the signed URL expires. Omit for a non-expiring link. |
+
+## Verifying signatures
+
+Use `ctx.hasValidSignature()` to check whether the current request URL carries a valid, non-expired signature.
+
+```typescript
+@Route({ name: 'files.download' })
+async show(ctx: RouterContext) {
+  const valid = await ctx.hasValidSignature()
+  if (!valid) {
+    return ctx.json({ error: 'Invalid or expired link' }, 403)
+  }
+  // serve the file...
+}
+```
+
+The method returns `false` if the signature is missing, does not match, or the link has expired.
+
+## Outside a route handler
+
+When you have a request available (for example, inside a service called from a controller), inject the `Uri` service and use its named-route helpers - they accept the same `expiresIn` shape as `ctx.signedUrl()`.
+
+```typescript
+import { ROUTER_TOKENS, type Uri } from 'stratal/router'
+
+const uri = ctx.getContainer().resolve<Uri>(ROUTER_TOKENS.Uri)
+
+// Equivalent to ctx.signedUrl('files.download', { id: '123' }, { expiresIn: 3600 })
+const url = await uri.temporarySignedRoute('files.download', 3600, { id: '123' })
+```
+
+For pure helpers that only need a URL string and the signing secret -- in a queue consumer or scheduled task where there is no request -- use the lower-level functions:
+
+```typescript
+import { signUrl, verifySignedUrl } from 'stratal/router'
+
+const signed = await signUrl('https://example.com/download/123', secret, {
+  expiresIn: 3600,
+})
+
+const isValid = await verifySignedUrl(signed, secret)
+```
+
+<Aside>
+  Signed URLs use the Web Crypto API (HMAC-SHA256) and timing-safe comparison, making them safe for use in Cloudflare Workers without additional dependencies.
+</Aside>

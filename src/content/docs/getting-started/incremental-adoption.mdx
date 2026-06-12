@@ -22,9 +22,9 @@ With the skill installed, your AI agent can:
 - Analyze your existing Hono routes and identify candidates for migration
 - Generate Stratal modules, controllers, and services that match your current route structure
 - Wire up dependency injection, queue consumers, and cron jobs correctly
-- Handle the subtleties — async initialization, DI container scope, middleware ordering, and error handling boundaries
+- Handle the subtleties - async initialization, DI container scope, middleware ordering, and error handling boundaries
 
-As you migrate routes into Stratal, they're automatically included in the OpenAPI spec and can be exposed as [MCP](https://modelcontextprotocol.io/) tools via `npx quarry mcp:serve` — giving AI agents direct access to your newly migrated API endpoints.
+As you migrate routes into Stratal, they're automatically included in the OpenAPI spec and can be exposed as [MCP](https://modelcontextprotocol.io/) tools via `npx quarry mcp:serve` - giving AI agents direct access to your newly migrated API endpoints.
 
 See [AI Integration](/getting-started/ai/) for the full setup, including MCP client configuration and filtering options.
 
@@ -77,7 +77,7 @@ All routes defined in your Stratal modules will now be available under the `/api
 
 ## Wiring up queues and cron jobs
 
-When you mount Stratal as a sub-app with `app.route()`, only HTTP routing is connected. Queue consumers and scheduled (cron) handlers are **not** part of the Hono routing layer — they must be explicitly forwarded from your worker's export.
+When you mount Stratal as a sub-app with `app.route()`, only HTTP routing is connected. Queue consumers and scheduled (cron) handlers are **not** part of the Hono routing layer - they must be explicitly forwarded from your worker's export.
 
 The code example above shows the full pattern: export an object with `fetch`, `queue`, and `scheduled` handlers instead of exporting `app` directly.
 
@@ -96,7 +96,7 @@ export default {
 <Aside type="note">
   - `stratal.queue()` dispatches messages to consumers registered in Stratal modules by **message type**, not queue name.
   - `stratal.scheduled()` matches `controller.cron` against job `schedule` properties defined in your modules.
-  - Email (via `EmailModule`) is queue-based — it requires the queue handler to be wired for delivery to work.
+  - Email (via `EmailModule`) is queue-based - it requires the queue handler to be wired for delivery to work.
 </Aside>
 
 If you skip the `queue` or `scheduled` exports, any queue consumers or cron jobs defined in your Stratal modules will silently do nothing.
@@ -105,11 +105,11 @@ If you skip the `queue` or `scheduled` exports, any queue consumers or cron jobs
 
 A practical migration strategy is to move one feature at a time into Stratal modules while keeping everything else in your existing Hono app:
 
-1. **Pick a feature** — Start with a self-contained feature like user management or billing.
-2. **Create a Stratal module** — Move the routes, services, and logic into a Stratal module with controllers and providers.
-3. **Mount under a prefix** — Use `app.route()` to mount Stratal at the same path your existing routes used.
-4. **Remove old routes** — Delete the original Hono handlers for the migrated feature.
-5. **Repeat** — Continue moving features until your entire app runs on Stratal.
+1. **Pick a feature** - Start with a self-contained feature like user management or billing.
+2. **Create a Stratal module** - Move the routes, services, and logic into a Stratal module with controllers and providers.
+3. **Mount under a prefix** - Use `app.route()` to mount Stratal at the same path your existing routes used.
+4. **Remove old routes** - Delete the original Hono handlers for the migrated feature.
+5. **Repeat** - Continue moving features until your entire app runs on Stratal.
 
 ```typescript
 import { Hono } from 'hono'
@@ -142,7 +142,7 @@ Over time, you can shrink the legacy section and expand the Stratal-managed rout
 
 ### Async initialization
 
-The `stratal.hono` getter returns a `Promise<HonoApp>` because Stratal bootstraps asynchronously — it resolves modules, builds the DI container, and registers routes during initialization. You must `await` it before mounting.
+The `stratal.hono` getter returns a `Promise<HonoApp>` because Stratal bootstraps asynchronously - it resolves modules, builds the DI container, and registers routes during initialization. You must `await` it before mounting.
 
 <Aside type="caution">
   Do not call `stratal.hono` on every request. Await it once at the top level and reuse the resolved instance. Cloudflare Workers supports top-level await in ES module format.
@@ -170,7 +170,7 @@ Request
   → Response
 ```
 
-Keep this in mind when migrating authentication or other cross-cutting concerns — you may need to configure them in both layers during the transition.
+Keep this in mind when migrating authentication or other cross-cutting concerns - you may need to configure them in both layers during the transition.
 
 ### Error handling boundary
 

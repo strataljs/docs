@@ -79,7 +79,7 @@ const factory = new UserFactory().admin().unverified()
 
 ## Building instances
 
-### make — without persistence
+### make - without persistence
 
 `make()` returns a plain object with the factory's attributes. It does not touch the database:
 
@@ -98,7 +98,7 @@ const users = new UserFactory().count(5).makeMany()
 // Array of 5 user attribute objects
 ```
 
-### create — with database persistence
+### create - with database persistence
 
 `create()` inserts a record into the database and returns the created model:
 

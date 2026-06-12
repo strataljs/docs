@@ -38,7 +38,7 @@ A few things to note:
   | `patch()`   | PATCH     | `/api/hello/:id` |
   | `destroy()` | DELETE    | `/api/hello/:id` |
 
-  You only implement the methods you need — here we define `index()` to handle `GET /api/hello`.
+  You only implement the methods you need - here we define `index()` to handle `GET /api/hello`.
 
 - **`@Route`** configures the route. The `response` property is a Zod schema that validates the response body and feeds into automatic OpenAPI documentation.
 - **`RouterContext`** gives you access to the request, params, and helper methods like `ctx.json()`.
@@ -51,7 +51,7 @@ If you have an AI agent (Claude Code, VS Code Copilot, Windsurf, etc.), install 
 npx skills add strataljs/stratal
 ```
 
-With the skill installed, your AI agent knows how `@Controller` paths map to routes, how `IController` methods map to HTTP verbs, how `@Route` schemas feed into OpenAPI, and how modules wire everything together. It can generate controllers, services, modules, and DI bindings following these exact patterns — so you can describe what you want and let your agent build it.
+With the skill installed, your AI agent knows how `@Controller` paths map to routes, how `IController` methods map to HTTP verbs, how `@Route` schemas feed into OpenAPI, and how modules wire everything together. It can generate controllers, services, modules, and DI bindings following these exact patterns - so you can describe what you want and let your agent build it.
 
 Once your routes are running, you can also expose them as [MCP](https://modelcontextprotocol.io/) tools so AI agents can discover and call your API endpoints directly:
 
@@ -81,9 +81,9 @@ export class AppModule {}
 
 The **`@Module`** decorator accepts an options object with:
 
-- **`controllers`** — an array of controller classes to register.
-- **`providers`** — services and other injectable classes (covered in [Dependency Injection](/core-concepts/dependency-injection/)).
-- **`imports`** — other modules to compose into this one (covered in [Modules](/core-concepts/modules/)).
+- **`controllers`** - an array of controller classes to register.
+- **`providers`** - services and other injectable classes (covered in [Dependency Injection](/core-concepts/dependency-injection/)).
+- **`imports`** - other modules to compose into this one (covered in [Modules](/core-concepts/modules/)).
 
 For now, a single controller is all you need.
 
@@ -92,14 +92,12 @@ For now, a single controller is all you need.
 The entry point is the file Wrangler invokes when a request arrives. Create `src/index.ts`:
 
 ```typescript
-import 'reflect-metadata'
 import { Stratal } from 'stratal'
 import { AppModule } from './app.module'
 
 export default new Stratal({ module: AppModule })
 ```
 
-- **`import 'reflect-metadata'`** must appear once at the top of your entrypoint. It enables the decorator metadata that Stratal's dependency injection (powered by `tsyringe`) relies on.
 - **`Stratal`** is the framework entry point. It eagerly bootstraps the module system, router, and DI container.
 - The `module` option points to your root module.
 
@@ -194,7 +192,7 @@ import { HelloService } from './hello.service'
 export class AppModule {}
 ```
 
-Restart the dev server and hit the endpoint again — the response is now `{"message":"Hello, World!"}`, produced by the injected service.
+Restart the dev server and hit the endpoint again - the response is now `{"message":"Hello, World!"}`, produced by the injected service.
 
 ## Next steps
 
@@ -214,7 +212,7 @@ my-worker/
 
 From here you can explore:
 
-- [Project Structure](/getting-started/project-structure/) — recommended directory layout as your app grows.
-- [Controllers and Routing](/core-concepts/controllers-and-routing/) — custom routes, path params, and the `handle()` escape hatch.
-- [Dependency Injection](/core-concepts/dependency-injection/) — scopes, tokens, and advanced DI patterns.
-- [Modules](/core-concepts/modules/) — composing feature modules and sharing providers.
+- [Project Structure](/getting-started/project-structure/) - recommended directory layout as your app grows.
+- [Controllers and Routing](/core-concepts/controllers-and-routing/) - custom routes, path params, and the `handle()` escape hatch.
+- [Dependency Injection](/core-concepts/dependency-injection/) - scopes, tokens, and advanced DI patterns.
+- [Modules](/core-concepts/modules/) - composing feature modules and sharing providers.

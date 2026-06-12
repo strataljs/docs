@@ -5,7 +5,7 @@ description: The @stratal/testing package, setup, and a quick example.
 
 import { Aside } from '@astrojs/starlight/components';
 
-`@stratal/testing` provides first-class testing utilities built on [Vitest](https://vitest.dev/) and [`@cloudflare/vitest-pool-workers`](https://developers.cloudflare.com/workers/testing/vitest-integration/). It gives you module bootstrapping, an HTTP test client with fluent assertions, provider overrides, fake storage, and fetch mocking — all running on the real Workers runtime.
+`@stratal/testing` provides first-class testing utilities built on [Vitest](https://vitest.dev/) and [`@cloudflare/vitest-pool-workers`](https://developers.cloudflare.com/workers/testing/vitest-integration/). It gives you module bootstrapping, an HTTP test client with fluent assertions, provider overrides, fake storage, and fetch mocking, all running on the real Workers runtime.
 
 ## Why test on the Workers runtime
 
@@ -20,7 +20,7 @@ yarn add -D @stratal/testing @cloudflare/workers-types vitest
 ```
 
 <Aside type="note">
-  `@stratal/testing` bundles `@cloudflare/vitest-pool-workers` (0.13.0+) — you do not need to install it separately. `vitest` (>= 4) is a peer dependency that you must install yourself.
+  `@stratal/testing` bundles `@cloudflare/vitest-pool-workers` (0.13.0+), so you do not need to install it separately. `vitest` (>= 4) is a peer dependency that you must install yourself.
 </Aside>
 
 ## Project setup
@@ -42,7 +42,7 @@ export default defineConfig({
 ```
 
 <Aside type="tip">
-  `stratalTest()` wraps `cloudflareTest` from `@cloudflare/vitest-pool-workers` and applies Stratal-specific defaults: a tslib alias for tsyringe, ZenStack language mocks, a nodemailer mock, and SSR externals configuration. You do not need to configure these manually.
+  `stratalTest()` wraps `cloudflareTest` from `@cloudflare/vitest-pool-workers` and applies Stratal-specific defaults: a tslib alias for decorator helpers, ZenStack language mocks, and SSR externals configuration. You do not need to configure these manually. Email sending is handled separately at runtime: `compile()` installs an in-memory `TestEmailProvider` so tests never open a real SMTP connection.
 </Aside>
 
 <Aside type="note">
@@ -51,10 +51,9 @@ export default defineConfig({
 
 ### Vitest setup file
 
-Create a `vitest.setup.ts` that imports `reflect-metadata` (required in tests since they don't go through the `Stratal` entry point, which handles this import automatically in production) and configures shared base modules:
+Create a `vitest.setup.ts` that configures shared base modules:
 
 ```typescript
-import 'reflect-metadata'
 import { Test } from '@stratal/testing'
 import { CoreModule } from './src/core/core.module'
 
@@ -64,7 +63,7 @@ Test.setBaseModules([CoreModule])
 `Test.setBaseModules()` registers modules that should be included in every test module. This avoids repeating common imports like your `CoreModule` in every test file.
 
 <Aside type="tip">
-  Base modules are prepended to the `imports` array of every test module. Put shared configuration modules here — database connections, logging, queue setup, etc.
+  Base modules are prepended to the `imports` array of every test module. Put shared configuration modules here: database connections, logging, queue setup, etc.
 </Aside>
 
 ### Wrangler configuration
@@ -123,6 +122,10 @@ describe('NotesController', () => {
 ```
 
 `Test.createTestingModule()` creates an isolated application instance with your module's controllers, providers, and routes. The `module.http` property provides a fluent HTTP client for making requests and asserting responses.
+
+<Aside type="note">
+  `.compile()` initializes routing eagerly and installs safe test defaults: in-memory storage, an in-memory email provider, and a no-op rate limiter so suites never trip production limits. See [Mocks and Fakes](/testing/mocks-and-fakes/) for how to assert on sent email and how to opt back into real rate limiting, and [Testing Module](/testing/testing-module/) for what `compile()` does step by step.
+</Aside>
 
 ## Test lifecycle
 

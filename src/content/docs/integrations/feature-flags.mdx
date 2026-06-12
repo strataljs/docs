@@ -1,0 +1,240 @@
+---
+title: Feature Flags
+description: Evaluate Cloudflare Flagship feature flags through the native Worker binding, with manifest defaults, per-request context, multi-app support, Inertia sharing, and typed React hooks.
+---
+
+import { Aside, Tabs, TabItem, Steps, LinkCard } from '@astrojs/starlight/components';
+
+`@stratal/feature-flags` evaluates [Cloudflare Flagship](https://developers.cloudflare.com/flagship/) feature flags through the native Worker binding API. It adds manifest defaults, a per-request evaluation context, multi-app support, opt-in Inertia sharing, and typed React hooks. Evaluation goes straight through the binding, so there is no OpenFeature SDK and no HTTP fallback.
+
+## Installation
+
+```bash
+npm install @stratal/feature-flags
+```
+
+## Setup
+
+<Steps>
+1. **Configure the Flagship binding.** Add a `flagship` block to `wrangler.jsonc`, then run `npx wrangler types`:
+
+   ```jsonc
+   {
+     "flagship": [
+       { "binding": "FLAGS", "app_id": "<APP_ID_1>" },
+       { "binding": "EXPERIMENT_FLAGS", "app_id": "<APP_ID_2>" }
+     ]
+   }
+   ```
+
+   `npx wrangler types` types each binding as the global `Flagship`. Augment `StratalEnv` so binding names are type-checked throughout your application:
+
+   ```typescript
+   declare module 'stratal' {
+     interface StratalEnv extends Cloudflare.Env {}
+   }
+   ```
+
+2. **Declare your flags.** Flagship has no API to list flags, so you declare the flags you use once in each app's `flags` manifest. The declared value is reused as the default on every evaluation, and the manifest is what gets shared to the frontend.
+</Steps>
+
+<Aside type="note">
+  The manifest is the single source of truth for which flags exist. A flag you never declare cannot be evaluated through manifest defaults, and it will not be shared to the frontend.
+</Aside>
+
+## Module registration
+
+Register `FeatureFlagModule` in your `AppModule` (or any feature module) with `forRoot`. Each app names its binding and declares its flag manifest:
+
+```typescript
+import { Module } from 'stratal/module'
+import { FeatureFlagModule } from '@stratal/feature-flags'
+
+@Module({
+  imports: [
+    FeatureFlagModule.forRoot({
+      apps: [
+        { binding: 'FLAGS', flags: { 'new-checkout': false, 'checkout-flow': 'v1', 'max-uploads': 5 } },
+        { binding: 'EXPERIMENT_FLAGS', flags: { 'layout-v2': false } },
+      ],
+      // Optional. The default app used by the injected service. Defaults to apps[0].binding.
+      default: 'FLAGS',
+      // Merged into every evaluation (targeting); per-call context overrides it.
+      // ctx.user() is provided by @stratal/framework's AuthModule.
+      context: (ctx) => ({ userId: ctx.user().id }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+### FeatureFlagModuleOptions
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `apps` | `FeatureFlagApp[]` | required | One or more Flagship apps. A Worker may bind to multiple apps. |
+| `default` | `FlagshipBindingName?` | `apps[0].binding` | The app binding used by the injected `FeatureFlagService`. |
+| `context` | `(ctx: RouterContext) => FlagshipEvaluationContext \| Promise<...>` | none | Resolves a per-request evaluation context merged into every evaluation. Per-call context overrides it. Skipped outside request scope. |
+
+Each `FeatureFlagApp` has a `binding` (the type-checked Flagship binding name) and an optional `flags` manifest of declared defaults.
+
+### Async configuration
+
+When options depend on other providers (for example a config namespace), use `forRootAsync`:
+
+```typescript
+FeatureFlagModule.forRootAsync({
+  inject: [flagsConfig.KEY],
+  useFactory: (cfg) => ({ apps: cfg.apps, default: cfg.default }),
+})
+```
+
+## Server-side evaluation
+
+Inject `FeatureFlagService` with the `FEATURE_FLAG_TOKENS.FeatureFlagService` token. The service is request-scoped, so inject it into `@Request()` or `@Transient()` providers and controllers:
+
+```typescript
+import { FEATURE_FLAG_TOKENS, type FeatureFlagService } from '@stratal/feature-flags'
+import { Transient, inject } from 'stratal/di'
+
+@Transient()
+export class CheckoutService {
+  constructor(
+    @inject(FEATURE_FLAG_TOKENS.FeatureFlagService) private readonly flags: FeatureFlagService,
+  ) {}
+
+  async run() {
+    const enabled = await this.flags.getBooleanValue('new-checkout')        // manifest default (false)
+    const flow = await this.flags.getStringValue('checkout-flow', 'legacy') // explicit default wins
+    const perUser = await this.flags.getBooleanValue('new-checkout', false, { country: 'US' }) // merges context
+  }
+}
+```
+
+The `defaultValue` argument is optional. When you omit it, the value declared in the app's manifest is used; an explicit argument always wins. Each method also accepts an optional per-call evaluation `context` that is merged on top of the module's `context` resolver.
+
+### Evaluation methods
+
+| Method | Returns |
+| --- | --- |
+| `get(key, default?, ctx?)` | `unknown` (raw value) |
+| `getBooleanValue(key, default?, ctx?)` | `boolean` |
+| `getStringValue(key, default?, ctx?)` | `string` |
+| `getNumberValue(key, default?, ctx?)` | `number` |
+| `getObjectValue<T>(key, default?, ctx?)` | `T` |
+| `getBooleanDetails` / `getStringDetails` / `getNumberDetails` / `getObjectDetails` | `FlagshipEvaluationDetails<T>` (value plus `reason`, `variant`, and error metadata) |
+| `all(ctx?)` | `Record<string, FlagValue>`, every declared flag in the current app |
+
+The `*Details` methods return the full evaluation result, including the `reason` and any `variant`, which is useful for experimentation and debugging. `all()` evaluates every flag in the current app's manifest, choosing the evaluation method from each declared default's type, and powers the Inertia share middleware.
+
+<Aside type="tip">
+  Evaluation never throws. The Flagship binding returns the supplied default on evaluation errors, and the service additionally absorbs any unexpected failure (for example a dropped remote-binding tunnel in local dev), returns the same fallback, and logs a warning. A flag lookup never takes the request down with it.
+</Aside>
+
+### Multiple apps
+
+Switch to another configured app with `use(binding)`. It returns a new immutable instance bound to that app's binding and manifest, leaving the original untouched:
+
+```typescript
+const layoutV2 = await this.flags.use('EXPERIMENT_FLAGS').getBooleanValue('layout-v2')
+```
+
+The binding passed to `use()` must be declared in the module's `apps`. Read the current target with the `app` getter.
+
+## Inertia auto-share
+
+`FeatureFlagShareMiddleware` evaluates the default app's manifest with `all()` on each page render and shares the result as the `featureFlags` prop. It only runs on `GET` requests (page renders are always `GET`, so mutating API calls never trigger evaluation) and no-ops when Inertia is not installed.
+
+The middleware is **not** registered for you. Register it yourself from a module's `configureRoutes`, scoped to the controllers that render flag-aware pages, so a stalled Flagship binding only affects those routes:
+
+```typescript
+import { Module } from 'stratal/module'
+import { FeatureFlagModule, FeatureFlagShareMiddleware } from '@stratal/feature-flags'
+import { InertiaModule } from '@stratal/inertia'
+import type { RouteConfigurable, Router } from 'stratal/router'
+
+@Module({
+  imports: [
+    InertiaModule.forRoot({ rootView }),
+    FeatureFlagModule.forRoot({ apps: [{ binding: 'FLAGS', flags: { 'new-checkout': false } }] }),
+  ],
+  controllers: [DashboardController],
+})
+export class DashboardModule implements RouteConfigurable {
+  configureRoutes(router: Router): void {
+    router.middleware(FeatureFlagShareMiddleware)  // only this module's controllers
+    // ...or app-wide from the root module:
+    // router.use(FeatureFlagShareMiddleware)
+  }
+}
+```
+
+<Aside type="caution">
+  Scope the middleware deliberately. Registering it app-wide with `router.use(...)` evaluates the manifest on every page render. Limiting it to the controllers that actually read flags keeps unrelated routes independent of the Flagship binding.
+</Aside>
+
+## React hooks
+
+Read shared flags in your components with `@stratal/feature-flags/react`. Two hooks are exported: `useFlag` for a single value and `useFeatureFlags` for the full map.
+
+```tsx
+import { useFlag, useFeatureFlags } from '@stratal/feature-flags/react'
+
+function Checkout() {
+  const showNew = useFlag('new-checkout')        // typed via FeatureFlagRegistry
+  const layout = useFlag('checkout-flow', 'v1')  // explicit default (loose)
+  const all = useFeatureFlags()                  // full map: Record<string, unknown>
+
+  return showNew ? <NewCheckout /> : <LegacyCheckout />
+}
+```
+
+`useFlag(key)` returns the value typed against the `FeatureFlagRegistry`. The `useFlag(key, defaultValue)` overload accepts any string key and returns the value or the supplied default when the flag is not present. `useFeatureFlags()` returns the entire shared map.
+
+<Aside type="note">
+  The hooks read the `featureFlags` prop produced by `FeatureFlagShareMiddleware`. If you do not register the middleware on the routes that render a page, the hooks fall back to defaults because the prop is absent.
+</Aside>
+
+### Typed flag keys
+
+Augment `FeatureFlagRegistry` so `useFlag` keys and return values are type-checked. The same registry types the server-side flag keys:
+
+```typescript
+declare module '@stratal/feature-flags' {
+  interface FeatureFlagRegistry {
+    'new-checkout': boolean
+    'checkout-flow': string
+    'max-uploads': number
+  }
+}
+```
+
+## Error handling
+
+`FeatureFlagError` is thrown only for misconfiguration: an unknown app passed to `use()` or as `default`, or a declared Flagship binding that is missing from the Worker environment. It extends `ApplicationError`, so the global error handler logs it automatically.
+
+Flag *evaluation* never throws. On any evaluation failure the service returns the resolved default and logs a warning through the logger when one is available.
+
+## Testing
+
+Because evaluation reads from the manifest declared in `forRoot`, the simplest way to control flags under test is to provide the manifest values you want. The service mirrors the binding methods one-to-one, so a binding double whose methods echo the default they receive lets you assert flag-driven branches without a live Flagship connection. Switching apps with `use()` and the per-call `context` argument behave the same way in tests as in production.
+
+## Next steps
+
+<LinkCard
+  title="Environment Typing"
+  href="/guides/environment-typing/"
+  description="Declare Flagship bindings on StratalEnv so binding names are type-checked."
+/>
+
+<LinkCard
+  title="Dependency Injection"
+  href="/core-concepts/dependency-injection/"
+  description="Inject FeatureFlagService into request-scoped providers and controllers."
+/>
+
+<LinkCard
+  title="Shared Data & Props"
+  href="/inertia/shared-data-and-props/"
+  description="How shared props, including feature flags, reach your React frontend."
+/>

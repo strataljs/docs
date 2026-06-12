@@ -3,7 +3,7 @@ title: Testing Module
 description: Test.createTestingModule() and provider overrides.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, Steps } from '@astrojs/starlight/components';
 
 `TestingModule` creates isolated application instances with a full DI container, router, and environment. It is the core building block for integration tests in Stratal.
 
@@ -40,6 +40,30 @@ The `createTestingModule` method accepts a `TestingModuleConfig` object that ext
 | `jobs` | `Constructor[]` | Cron jobs to register |
 | `env` | `Partial<StratalEnv>` | Environment variable overrides |
 | `logging` | `{ level?: LogLevel; formatter?: string }` | Logging config (defaults to `ERROR` level, `pretty` formatter) |
+
+## What `compile()` does
+
+`compile()` builds and fully initializes the application before resolving:
+
+<Steps>
+
+1. Builds a root module from your config, prepending any [base modules](#shared-base-modules).
+
+2. Constructs the `Application` and runs `initialize()`.
+
+3. Installs test defaults: a `FakeStorageService` for storage, a `FakeFeatureFlagService` for feature flags, a `NoopRateLimiterStore` so suites never trip rate limits, and an in-memory `TestEmailProvider` so no SMTP connections open. See [Mocks and Fakes](/testing/mocks-and-fakes/) for the rate limiter and email defaults.
+
+4. Applies your provider overrides, so they replace both module-registered providers and the test defaults.
+
+5. Initializes routing eagerly, so the router and its services are built during `compile()` rather than on the first request.
+
+</Steps>
+
+Because routing is initialized eagerly, configuration errors surface as a `compile()` rejection instead of on the first HTTP request. For example, mixing `@Route()` with HTTP method decorators on the same handler fails the `await ...compile()` call, so the misconfiguration is caught at setup with a clear stack rather than deep inside a request.
+
+<Aside type="caution">
+  If `compile()` fails for any reason, it tears down the partially built application (shutting down module-held resources like database pools and timers) before rejecting. You do not need a `try/finally` around `compile()` to clean up a failed build, but you still call `module.close()` in `afterAll` for modules that compiled successfully.
+</Aside>
 
 ## Provider overrides
 
@@ -154,6 +178,8 @@ After calling `.compile()`, you get a `TestingModule` with the following propert
 | `get(token)` | `<T>(token: InjectionToken<T>) => T` | Resolve a service from the container |
 | `http` | `TestHttpClient` | HTTP test client for making requests |
 | `storage` | `FakeStorageService` | Fake storage service with assertion helpers |
+| `sentEmails` | `ResolvedEmailMessage[]` | Messages recorded by the default `TestEmailProvider`, in send order |
+| `featureFlags` | `FakeFeatureFlagService` | Fake feature-flag service for toggling flags in tests |
 | `container` | `Container` | The DI container |
 | `application` | `Application` | The underlying Application instance |
 | `fetch(request)` | `(request: Request) => Promise<Response>` | Execute an HTTP request through the router |
@@ -200,7 +226,6 @@ Call `Test.setBaseModules()` once in your `vitest.setup.ts` to register modules 
 
 ```typescript
 // vitest.setup.ts
-import 'reflect-metadata' // Required in tests (Stratal handles this automatically in production)
 import { Test } from '@stratal/testing'
 import { CoreModule } from './src/core/core.module'
 import { DatabaseModule } from './src/database/database.module'
@@ -211,7 +236,7 @@ Test.setBaseModules([CoreModule, DatabaseModule])
 Base modules are prepended to the `imports` array of every test module. This avoids duplicating shared configuration in every test file. In your tests, you only need to import the module under test:
 
 ```typescript
-// Only imports NotesModule — CoreModule and DatabaseModule come from base modules
+// Only imports NotesModule; CoreModule and DatabaseModule come from base modules
 const module = await Test.createTestingModule({
   imports: [NotesModule],
 }).compile()

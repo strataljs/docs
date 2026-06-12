@@ -1,38 +1,29 @@
 ---
 title: Email
-description: Send transactional emails asynchronously with Resend or SMTP, React Email templates, batch sending, and queue-based dispatch.
+description: Send transactional emails asynchronously over a built-in SMTP client, with React Email templates, batch sending, and queue-based dispatch.
 ---
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-Stratal provides an `EmailModule` for sending transactional emails asynchronously through a queue. It supports multiple providers (Resend and SMTP), React Email templates, batch sending, and both inline and storage-based attachments. Emails are dispatched to a queue and processed by a built-in consumer, keeping your request handlers fast.
+Stratal provides an `EmailModule` for sending transactional emails asynchronously through a queue. Email is delivered by a built-in SMTP client that runs over `cloudflare:sockets`, so there are zero runtime dependencies for sending. Point the module at any SMTP endpoint (Resend, Postmark, SendGrid, Mailgun, or a self-hosted server) and it just works. The module supports React Email templates, batch sending, and both inline and storage-based attachments. Emails are dispatched to a queue and processed by a built-in consumer, keeping your request handlers fast.
 
-## Install dependencies
+## Install
 
-Install the provider package for your email service:
+Sending plain `html` or `text` email needs no extra packages. The SMTP client is built in.
 
-<Tabs>
-  <TabItem label="SMTP">
-```bash
-yarn add nodemailer
-```
-  </TabItem>
-  <TabItem label="Resend">
-```bash
-yarn add resend
-```
-  </TabItem>
-</Tabs>
-
-If you want to use React Email templates, also install:
+If you want to render [React Email](https://react.email/) templates, install the renderer and React:
 
 ```bash
 yarn add @react-email/render react
 ```
 
+<Aside type="note">
+  `@react-email/render` is an optional peer dependency. It is loaded lazily, only when you pass a `template`, so it never runs on the request hot path or at worker cold start.
+</Aside>
+
 ## Configuration
 
-The `EmailModule` requires the `QueueModule` to be configured first, since emails are dispatched through a queue. Register the queue, then configure the email module:
+The `EmailModule` requires the `QueueModule`, since emails are dispatched through a queue. Register the queue, then configure the email module with your SMTP URL:
 
 ```typescript
 import { Module } from 'stratal/module'
@@ -53,9 +44,8 @@ import { EmailModule } from 'stratal/email'
     EmailModule.forRootAsync({
       inject: [DI_TOKENS.CloudflareEnv],
       useFactory: (env: StratalEnv) => ({
-        provider: 'resend',
-        apiKey: env.RESEND_API_KEY,
         from: { name: 'My App', email: 'noreply@example.com' },
+        smtp: { url: env.SMTP_URL },
         queue: 'email-queue',
       }),
     }),
@@ -64,58 +54,48 @@ import { EmailModule } from 'stratal/email'
 export class AppModule {}
 ```
 
+Store the SMTP URL as a secret (for example `SMTP_URL`) rather than hardcoding credentials.
+
+### SMTP URL format
+
+The `smtp.url` carries the host, port, and credentials. The scheme selects the transport security:
+
+<Tabs>
+  <TabItem label="STARTTLS">
+```
+smtp://user:pass@host:port
+```
+Upgrades a plaintext connection to TLS with `STARTTLS`. Default port `587`.
+  </TabItem>
+  <TabItem label="Implicit TLS">
+```
+smtps://user:pass@host:port
+```
+Opens a TLS connection immediately. Default port `465`.
+  </TabItem>
+</Tabs>
+
+Pointing at a hosted provider is a matter of using its SMTP endpoint and credentials in the URL:
+
+```bash
+# Resend
+SMTP_URL="smtp://resend:re_xxxxxxxx@smtp.resend.com:587"
+
+# Postmark
+SMTP_URL="smtp://<token>:<token>@smtp.postmarkapp.com:587"
+
+# SendGrid
+SMTP_URL="smtp://apikey:SG.xxxxxxxx@smtp.sendgrid.net:587"
+```
+
 ### EmailModuleOptions
 
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
-| `provider` | `'resend' \| 'smtp'` | Yes | Email provider to use |
 | `from` | `{ name: string; email: string }` | Yes | Default sender address |
-| `queue` | `QueueName` | Yes | Queue name for email dispatch (must be registered with `QueueModule.registerQueue`) |
-| `apiKey` | `string` | If Resend | Resend API key |
-| `smtp` | `SmtpConfig` | If SMTP | SMTP connection settings |
+| `smtp` | `{ url: string }` | Yes | SMTP connection URL (`smtp://` or `smtps://`) |
+| `queue` | `QueueBinding` | Yes | Queue binding for email dispatch (must be registered with `QueueModule.registerQueue`) |
 | `replyTo` | `string` | No | Default reply-to address |
-
-## Resend provider
-
-Set `provider` to `'resend'` and provide your API key:
-
-```typescript
-EmailModule.forRoot({
-  provider: 'resend',
-  apiKey: env.RESEND_API_KEY,
-  from: { name: 'My App', email: 'noreply@example.com' },
-  queue: 'email-queue',
-})
-```
-
-## SMTP provider
-
-Set `provider` to `'smtp'` and provide connection settings:
-
-```typescript
-EmailModule.forRoot({
-  provider: 'smtp',
-  smtp: {
-    host: 'smtp.example.com',
-    port: 587,
-    secure: false,
-    username: env.SMTP_USERNAME,
-    password: env.SMTP_PASSWORD,
-  },
-  from: { name: 'My App', email: 'noreply@example.com' },
-  queue: 'email-queue',
-})
-```
-
-### SmtpConfig
-
-| Option | Type | Required | Description |
-| --- | --- | --- | --- |
-| `host` | `string` | Yes | SMTP server hostname |
-| `port` | `number` | Yes | SMTP server port |
-| `secure` | `boolean` | No | Use TLS |
-| `username` | `string` | No | Auth username |
-| `password` | `string` | No | Auth password |
 
 ## Sending emails
 
@@ -223,7 +203,7 @@ Each message is dispatched as a separate queue entry with message type `email.se
 
 ## Attachments
 
-The email module supports two types of attachments:
+The email module supports two types of attachments. Each attachment is hard-capped at 20 MB: it is fully buffered before base64 encoding, and exceeding the cap throws.
 
 ### Inline attachments
 
@@ -245,7 +225,7 @@ await this.email.send({
 ```
 
 <Aside type="caution">
-  Inline attachments are base64-encoded into the queue message payload, so they are subject to Cloudflare Queue's message size limit. Use inline attachments only for small files. For larger files, use [storage-based attachments](#storage-attachments) instead to avoid exceeding the queue message size limit.
+  Inline `content` must be valid base64. Invalid base64 throws rather than shipping a corrupt file. Inline attachments are base64-encoded into the queue message payload, so they are subject to Cloudflare Queue's message size limit. Use inline attachments only for small files. For larger files, use [storage-based attachments](#storage-attachments) instead.
 </Aside>
 
 ### Storage attachments
@@ -277,37 +257,13 @@ The email module uses the queue system internally. Here is how the flow works:
 2. The email service renders any React template and dispatches a queue message with type `email.send`.
 3. The `EmailConsumer` (auto-registered by the module) picks up the message.
 4. The consumer resolves attachments (decodes inline base64 or downloads from storage).
-5. The consumer creates the configured email provider and sends the email.
+5. The consumer sends the message over the built-in SMTP client.
 6. On success, the message is acknowledged. On failure, it is retried.
 
 You do not need to register the `EmailConsumer` yourself. It is included automatically when you configure the `EmailModule`.
 
 <Aside type="tip">
   The queue-based approach means email failures do not affect your API responses. Failed emails are retried automatically by Cloudflare Queues, and you can monitor failures through the consumer's error logging.
-</Aside>
-
-## Error handling
-
-The email module uses focused error classes that extend `ApplicationError`. Each error has a localized i18n message key.
-
-### Configuration errors
-
-| Error class | When thrown |
-| --- | --- |
-| `ResendApiKeyMissingError` | Resend API key is not configured |
-| `SmtpConfigurationMissingError` | SMTP configuration not provided |
-| `SmtpHostMissingError` | SMTP `host` is missing from `SmtpConfig` |
-| `EmailProviderNotSupportedError` | Unsupported provider value configured |
-
-### Runtime errors
-
-| Error class | When thrown |
-| --- | --- |
-| `EmailSmtpConnectionFailedError` | SMTP server connection failed |
-| `EmailResendApiFailedError` | Resend API returned an error |
-
-<Aside type="note">
-  Errors thrown during queue processing are caught by the `EmailConsumer` and logged automatically via the `LoggerService`. You do not need to wrap consumer logic in try/catch yourself.
 </Aside>
 
 ## Retry logic
@@ -319,11 +275,9 @@ Email dispatch uses Cloudflare Queues' built-in retry mechanism:
 
 Configure these options in your `wrangler.jsonc` consumer entry. See the [Queues wrangler configuration](/integrations/queues/#1-configure-your-queue-binding) for the full example.
 
-## Testing
+## Local testing with Mailpit
 
-### Local testing with Mailpit
-
-[Mailpit](https://mailpit.axllent.org/) provides a local SMTP server with a web UI for inspecting captured emails. Run Mailpit with Docker and configure your email module to use it:
+[Mailpit](https://mailpit.axllent.org/) provides a local SMTP server with a web UI for inspecting captured emails. Run Mailpit with Docker and point the email module at it:
 
 ```bash
 # Start Mailpit
@@ -333,13 +287,12 @@ docker run -d --name mailpit -p 8025:8025 -p 1025:1025 axllent/mailpit
 docker compose up -d
 ```
 
-Then configure your email module to use Mailpit as the SMTP provider:
+Mailpit listens for plaintext SMTP on port `1025`, so use an `smtp://` URL:
 
 ```typescript
 EmailModule.forRoot({
-  provider: 'smtp',
-  smtp: { host: 'localhost', port: 1025 },
   from: { name: 'App', email: 'noreply@example.com' },
+  smtp: { url: 'smtp://localhost:1025' },
   queue: 'email-queue',
 })
 ```

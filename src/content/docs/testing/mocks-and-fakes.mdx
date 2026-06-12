@@ -1,11 +1,11 @@
 ---
 title: Mocks and Fakes
-description: FakeStorageService, FetchMock, and test environment helpers.
+description: FakeStorageService, FetchMock, and environment overrides for tests.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-`@stratal/testing` provides several tools for isolating your code from external dependencies: deep mocks with `createMock`, an in-memory `FakeStorageService` (via `@stratal/testing/storage`), fetch interception with `MockFetch` (built on [MSW](https://mswjs.io/)), and a nodemailer mock for email testing.
+`@stratal/testing` provides several tools for isolating your code from external dependencies: deep mocks with `createMock`, an in-memory `FakeStorageService` (via `@stratal/testing/storage`), fetch interception with `MockFetch` (built on [MSW](https://mswjs.io/)), an in-memory email provider, and a no-op rate limiter store. Several of these are installed automatically when you call `.compile()`, so your tests stay isolated from SMTP servers and production rate-limit budgets without any setup.
 
 ## Deep mocks with createMock
 
@@ -218,9 +218,9 @@ it('should fetch user data from external API', async () => {
 | --- | --- | --- | --- |
 | `status` | `number` | `200` | HTTP status code |
 | `headers` | `Record<string, string>` | `{}` | Additional response headers |
-| `delay` | `number` | — | Response delay in milliseconds |
+| `delay` | `number` | none | Response delay in milliseconds |
 | `method` | `string` | `'GET'` | HTTP method to match |
-| `path` | `string` | — | Override the URL pathname |
+| `path` | `string` | none | Override the URL pathname |
 
 ```typescript
 mock.mockJsonResponse(
@@ -250,7 +250,7 @@ it('should handle external API failure', async () => {
 | --- | --- | --- | --- |
 | `headers` | `Record<string, string>` | `{}` | Additional response headers |
 | `method` | `string` | `'GET'` | HTTP method to match |
-| `path` | `string` | — | Override the URL pathname |
+| `path` | `string` | none | Override the URL pathname |
 
 ### Adding runtime handlers with `use()`
 
@@ -275,7 +275,7 @@ it('should handle a custom response', async () => {
 ```
 
 <Aside type="tip">
-  `http` and `HttpResponse` are re-exported from MSW by `@stratal/testing` for convenience. Use `mock.use()` with raw MSW handlers when you need full control over matching logic or response construction — for example, conditional responses based on request headers or body content.
+  `http` and `HttpResponse` are re-exported from MSW by `@stratal/testing` for convenience. Use `mock.use()` with raw MSW handlers when you need full control over matching logic or response construction, for example conditional responses based on request headers or body content.
 </Aside>
 
 ### MockFetch methods reference
@@ -289,27 +289,128 @@ it('should handle a custom response', async () => {
 | `mockJsonResponse(url, data, options?)` | Mock a JSON response |
 | `mockError(url, status, message?, options?)` | Mock an error response |
 
-## Nodemailer mock
+## In-memory email
 
-If your application uses the SMTP email provider, `stratalTest()` automatically aliases `nodemailer` to `@stratal/testing/mocks/nodemailer` — no extra configuration needed.
-
-The mock replaces `createTransport` with a no-op that resolves `sendMail` calls immediately. No emails are sent and no SMTP connection is made.
-
-## Environment helpers
-
-Use `getTestEnv()` for standalone tests that need a `StratalEnv` object without bootstrapping a full module:
+Every test module installs a `TestEmailProvider` by default, so dispatching email never opens a real SMTP connection from the test worker. The provider records every message it is handed instead of sending it, and you assert on those messages through `module.sentEmails`.
 
 ```typescript
-import { getTestEnv } from '@stratal/testing'
+it('sends a welcome email on registration', async () => {
+  await module.http
+    .post('/api/v1/register')
+    .withBody({ name: 'Alice', email: 'alice@example.com', password: 'securepassword123' })
+    .send()
 
-it('should format config from env', () => {
-  const env = getTestEnv({ APP_NAME: 'test-app' })
-
-  expect(env.APP_NAME).toBe('test-app')
+  expect(module.sentEmails).toHaveLength(1)
+  expect(module.sentEmails[0].to).toBe('alice@example.com')
+  expect(module.sentEmails[0].subject).toBe('Welcome to Acme')
 })
 ```
 
-`getTestEnv()` merges the `cloudflare:test` environment with your overrides, giving you a complete `StratalEnv` object.
+`module.sentEmails` returns a `ResolvedEmailMessage[]` in send order. It is empty until a message is dispatched, and it stays empty if you override the email provider factory yourself (see below).
+
+<Aside type="note">
+  The sync queue provider runs the email consumer inline on dispatch, so a sent email is recorded by the time the request resolves. There is no queue to drain or timer to await before reading `module.sentEmails`.
+</Aside>
+
+### Overriding the email provider
+
+To replace the default in-memory provider with your own mock, override the `EMAIL_TOKENS.EmailProviderFactory` token. Your override takes the place of the default `TestEmailProvider`, so `module.sentEmails` stays empty and you assert through your own mock instead:
+
+```typescript
+import { createMock, type DeepMocked } from '@stratal/testing/mocks'
+import { EMAIL_TOKENS, type IEmailProvider } from 'stratal/email'
+
+const mockProvider = createMock<IEmailProvider>()
+
+const module = await Test.createTestingModule({
+  imports: [RegistrationModule],
+})
+  .overrideProvider(EMAIL_TOKENS.EmailProviderFactory)
+  .useValue({ create: () => mockProvider })
+  .compile()
+```
+
+<Aside type="tip">
+  For most suites you do not need to override anything. Assert on `module.sentEmails` directly. Reach for an override only when you need to simulate a provider failure or inspect the provider's own spy methods.
+</Aside>
+
+## Rate limiting disabled by default
+
+Test suites typically fire many requests from a single "IP" within seconds, which would trip production rate-limit budgets (and the per-path limits some auth flows enforce, which share the same store). To keep this from breaking unrelated tests, every test module installs a `NoopRateLimiterStore` at `RATE_LIMITER_TOKENS.Store`. It never persists a counter, so every limiter check passes.
+
+<Aside type="note">
+  This default means assertions like `response.assertOk()` are not silently turned into `429 Too Many Requests` failures just because a `beforeEach` replayed the same request many times.
+</Aside>
+
+### Testing rate-limit behavior
+
+When a suite specifically exercises rate limiting, override `RATE_LIMITER_TOKENS.Store` back to a real store. `InMemoryRateLimiterStore` is a Map-backed store that actually counts within the test isolate:
+
+```typescript
+import { Test } from '@stratal/testing'
+import { InMemoryRateLimiterStore, RATE_LIMITER_TOKENS } from 'stratal/rate-limiter'
+
+const module = await Test.createTestingModule({
+  imports: [AppModule],
+})
+  .overrideProvider(RATE_LIMITER_TOKENS.Store)
+  .useClass(InMemoryRateLimiterStore)
+  .compile()
+
+it('rejects requests past the limit', async () => {
+  for (let i = 0; i < 5; i++) {
+    await module.http.post('/api/v1/login').withBody({ email: 'a@b.com', password: 'x' }).send()
+  }
+
+  const response = await module.http
+    .post('/api/v1/login')
+    .withBody({ email: 'a@b.com', password: 'x' })
+    .send()
+
+  response.assertStatus(429)
+})
+```
+
+Both `RATE_LIMITER_TOKENS` and `InMemoryRateLimiterStore` are exported from `stratal/rate-limiter`.
+
+## Environment overrides
+
+Supply or override env values for a test module through the testing module builder. There are two equivalent ways to do it.
+
+Pass an `env` object directly in the config:
+
+```typescript
+import { Test } from '@stratal/testing'
+
+const module = await Test.createTestingModule({
+  imports: [AppModule],
+  env: { APP_NAME: 'test-app' },
+}).compile()
+```
+
+Or chain `.withEnv()`, which merges its argument into any `env` already set:
+
+```typescript
+const module = await Test.createTestingModule({
+  imports: [AppModule],
+})
+  .withEnv({ APP_NAME: 'test-app' })
+  .compile()
+```
+
+Both accept a `Partial<StratalEnv>`. At `compile()` time, your overrides are merged on top of the `cloudflare:workers` environment, so you only specify the values you want to change. Anything injected via `DI_TOKENS.CloudflareEnv` then sees the merged result:
+
+```typescript
+import type { StratalEnv } from 'stratal'
+import { DI_TOKENS } from 'stratal/di'
+
+const env = module.get<StratalEnv>(DI_TOKENS.CloudflareEnv)
+expect(env.APP_NAME).toBe('test-app')
+```
+
+<Aside type="note">
+  Env overrides are applied while bootstrapping the module, so there is no standalone "get an env object" helper. Reach for `env` or `.withEnv()` whenever a test needs a specific binding or variable.
+</Aside>
 
 ## Putting it all together
 

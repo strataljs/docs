@@ -1,0 +1,196 @@
+---
+title: Modals
+description: Backend-driven modal pages with @stratal/inertia-modal. Render a modal over a background page from a single controller method.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`@stratal/inertia-modal` lets a single Inertia route render a modal *over* another page. The address bar shows the modal URL; the user can refresh, share, or hit back without breaking the experience. There is no client-side modal state to wire up: the server decides what's a modal and what isn't.
+
+When the user opens a modal, Stratal fetches the background page in-process, embeds the modal component and props in the response, and the client-side `<Modal />` component renders the overlay. Closing the modal navigates back to the background URL.
+
+## Install
+
+```bash
+yarn add @stratal/inertia-modal
+```
+
+## Server setup
+
+Add `ModalModule` to your application's imports. It depends on `InertiaModule` (already in your imports), registers the modal service, adds an `inertiaModal()` method to `RouterContext`, and registers its own i18n message namespace.
+
+```typescript
+import { Module } from 'stratal/module'
+import { InertiaModule } from '@stratal/inertia'
+import { ModalModule } from '@stratal/inertia-modal'
+
+@Module({
+  imports: [
+    InertiaModule.forRoot({ /* ... */ }),
+    ModalModule,
+  ],
+})
+export class AppModule {}
+```
+
+## Defining a modal route
+
+A modal route is a regular Inertia controller method. Call `ctx.inertiaModal()` instead of `ctx.inertia()` and tell it which background page should sit behind the modal:
+
+```typescript
+import { Controller, Get, type RouterContext } from 'stratal/router'
+
+@Controller('/notes')
+export class NotesController {
+  @Get('/')
+  index(ctx: RouterContext) {
+    return ctx.inertia('notes/Index', { notes: [/* ... */] })
+  }
+
+  @Get('/:id/edit')
+  async edit(ctx: RouterContext) {
+    const note = await this.notes.findById(ctx.param('id'))
+    return ctx.inertiaModal(
+      'notes/EditModal',
+      { note },
+      { baseURL: '/notes' },
+    )
+  }
+}
+```
+
+| Argument | Description |
+| --- | --- |
+| `component` | Page component name to render inside the modal (resolved by your Inertia resolver, e.g. `'notes/EditModal'`). |
+| `props` | Props passed to the modal component. |
+| `options.baseURL` | Path of the background page to render behind the modal. Used as the redirect target when the modal is closed. |
+
+The modal URL (`/notes/123/edit` in the example) becomes the canonical URL. Bookmarking it, refreshing, or visiting it directly all show the modal over the background page.
+
+## Client setup
+
+`@stratal/inertia-modal` ships its own page resolver so the client can dynamically load the modal component when one is active. Configure it in your Inertia entry file *before* `createInertiaApp`, then mount `<Modal />` once in your root layout.
+
+```tsx
+// src/inertia/app.tsx
+import { createInertiaApp } from '@inertiajs/react'
+import { resolver } from '@stratal/inertia-modal/react'
+
+const pages = import.meta.glob('./pages/**/*.tsx')
+
+resolver.set(async (name) => {
+  const page = await pages[`./pages/${name}.tsx`]?.()
+  if (!page) throw new Error(`Page not found: ${name}`)
+  return page
+})
+
+createInertiaApp({
+  resolve: async (name) => {
+    const page = await pages[`./pages/${name}.tsx`]?.()
+    if (!page) throw new Error(`Page not found: ${name}`)
+    return page
+  },
+  // ...
+})
+```
+
+```tsx
+// src/inertia/layouts/dashboard.tsx
+import { Modal } from '@stratal/inertia-modal/react'
+
+export function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <>
+      <Sidebar />
+      <main>{children}</main>
+      <Modal />
+    </>
+  )
+}
+```
+
+`<Modal />` reads `props.modal` from the current Inertia page and renders the corresponding component. When no modal is active it renders nothing.
+
+## useModal()
+
+Inside a modal page component, `useModal()` exposes the modal state and a helper to dismiss it.
+
+```tsx
+// src/inertia/pages/notes/EditModal.tsx
+import { useModal } from '@stratal/inertia-modal/react'
+import { router } from '@inertiajs/react'
+
+interface Note {
+  id: string
+  title: string
+  content: string
+}
+
+export default function EditModal() {
+  const { show, redirect, props } = useModal()
+  const note = props?.note as Note | undefined
+
+  if (!show || !note) return null
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const data = new FormData(event.currentTarget)
+    router.post(`/notes/${note.id}`, data)
+  }
+
+  return (
+    <dialog open onClose={redirect}>
+      <h2>Edit note</h2>
+      <form onSubmit={handleSubmit}>
+        <input name="title" defaultValue={note.title} required />
+        <textarea name="content" defaultValue={note.content} />
+        <button type="submit">Save</button>
+        <button type="button" onClick={redirect}>Cancel</button>
+      </form>
+    </dialog>
+  )
+}
+```
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `show` | `boolean` | `true` when a modal is currently active on this page. |
+| `props` | `Record<string, unknown> \| undefined` | The props passed from `ctx.inertiaModal()`. |
+| `redirect()` | `() => void` | Navigate back to the page that opened the modal (or `baseURL` on direct visits). On a partial reload of the modal it uses `history.back()` instead of a server round-trip. |
+
+## Handling form submissions
+
+A modal form usually posts to a normal (non-modal) route and lets the response handle the redirect. Returning `ctx.redirect('/notes')` from your update handler closes the modal and returns the user to the background page.
+
+```typescript
+@Post('/:id')
+async update(ctx: RouterContext) {
+  const id = ctx.param('id')
+  await this.notes.update(id, await ctx.request.json())
+  return ctx.redirect('/notes')
+}
+```
+
+## Refreshing just the modal
+
+The modal data is exposed under a prop named `modal`. To re-fetch only the modal (for example a cascading select that re-queries server data) without reloading the background page, use Inertia's partial reload:
+
+```tsx
+import { router } from '@inertiajs/react'
+
+router.reload({ only: ['modal'] })
+```
+
+The server short-circuits the background sub-request in this case and returns only the fresh modal prop. Because the client already has the background page mounted, closing the modal afterwards uses `history.back()` rather than a server round-trip.
+
+## Errors
+
+| Error | HTTP status | When |
+| --- | --- | --- |
+| `ModalBackgroundFetchError` | 502 | The background page at `baseURL` could not be fetched: the sub-request returned a non-2xx status or an empty body. |
+
+Catch `ModalBackgroundFetchError` (imported from `@stratal/inertia-modal`) in your global `ExceptionHandler` to render a friendly fallback.
+
+<Aside type="caution">
+  Make sure the page at `baseURL` is reachable for the same authenticated user that hit the modal route. Modals run an internal sub-request that forwards the original request's cookies, host header, and forwarded-proto/host headers so authentication and domain-pattern middleware resolve identically.
+</Aside>

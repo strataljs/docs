@@ -2,6 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "main": "dist/_worker.js/index.js",
   "name": "stratal-docs",
+  "account_id": "7d5620faaf9e2d63e99b9496f49bb834",
   "compatibility_date": "2026-02-26",
   "route": {
     "custom_domain": true,

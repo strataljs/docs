@@ -1,0 +1,163 @@
+---
+title: Overview & Setup
+description: Get started with @stratal/inertia, an Inertia.js v3 server adapter for building server-driven React SPAs on Cloudflare Workers.
+---
+
+import { Aside, LinkCard, CardGrid, FileTree } from '@astrojs/starlight/components';
+
+`@stratal/inertia` is an Inertia.js v3 server-side adapter for Stratal. It lets you build server-driven single-page applications with React while keeping your routing, controllers, and data logic entirely on the server. There is no client-side router and no API layer to maintain: your Stratal controllers render React pages directly.
+
+## Installation
+
+Install the adapter alongside the Inertia.js client libraries, React, and the Vite tooling:
+
+```bash
+npm install @stratal/inertia @inertiajs/react @inertiajs/vite react react-dom
+npm install -D @types/react @types/react-dom vite @cloudflare/vite-plugin
+```
+
+## Quick scaffolding
+
+The Inertia CLI generates the recommended directory structure for you:
+
+```bash
+npx quarry inertia:install
+```
+
+This creates the client entry point, the streaming SSR entry, the root HTML template, a sample page component, and an initial type-definitions file. It also wires `InertiaModule.forRoot()` (with SSR enabled) into your `src/app.module.ts`.
+
+<Aside type="tip">
+  Inertia CLI commands live in `InertiaQuarryModule`. Import it from `@stratal/inertia/quarry` into your `src/quarry.ts` so commands like `inertia:install`, `inertia:dev`, `inertia:build`, and `inertia:types` are available.
+</Aside>
+
+The generated layout:
+
+<FileTree>
+- src/
+  - inertia/
+    - app.tsx       Client entry
+    - ssr.tsx       Streaming SSR entry
+    - root.html     Root HTML template
+    - inertia.d.ts  Generated page/prop types
+    - pages/
+      - Home.tsx
+    - public/
+</FileTree>
+
+## Module setup
+
+Register `InertiaModule` in your application module using `forRoot()`:
+
+```typescript
+import { Module } from 'stratal/module'
+import { InertiaModule, CookieFlashStore } from '@stratal/inertia'
+import rootView from './inertia/root.html?raw'
+
+@Module({
+  imports: [
+    InertiaModule.forRoot({
+      rootView,
+      version: '1.0.0',
+      ssr: {
+        bundle: () => import('./inertia/ssr'),
+      },
+      flash: {
+        store: new CookieFlashStore({ secret: env.FLASH_SECRET }),
+      },
+      routes: true,
+      sharedData: {
+        appName: 'My App',
+      },
+      i18n: {
+        only: ['common', 'nav'],
+      },
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+## Configuration options
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `rootView` | `string` | Raw HTML template string containing placeholder tags |
+| `version` | `string` | App version string used for cache busting |
+| `ssr` | `InertiaSsrOptions` | Streaming SSR configuration (`bundle`, `disabled`) |
+| `flash` | `InertiaFlashOptions` | Flash message store (`{ store }`) |
+| `sharedData` | `Record<string, unknown>` | Global props shared with every page (static values or `(ctx) => value` resolvers) |
+| `i18n` | `InertiaI18nOptions` | Share backend translations with the frontend (`{ only }`) |
+| `routes` | `boolean` | Inject serialized named routes for client-side URL generation with `useRoute()` |
+| `seo` | `InertiaSeoOptions` | App-wide SEO defaults and title template for backend-driven page metadata |
+| `entryClientPath` | `string` | Path to the client entry file (default: `src/inertia/app.tsx`) |
+
+<Aside type="note">
+  The production Vite build inlines your client manifest into the worker bundle automatically, so there is no `manifest` option to pass. In development, the adapter injects the Vite dev server scripts for you.
+</Aside>
+
+## Async configuration
+
+When your Inertia configuration depends on other providers (for example, a config service), use `forRootAsync()`:
+
+```typescript
+import { Module } from 'stratal/module'
+import { InertiaModule } from '@stratal/inertia'
+import { ConfigService } from './config.service'
+
+@Module({
+  imports: [
+    InertiaModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        rootView: config.get('INERTIA_ROOT_VIEW'),
+        version: config.get('APP_VERSION'),
+        ssr: { bundle: () => import('./inertia/ssr') },
+        routes: true,
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+## Root HTML template
+
+The `rootView` option expects a raw HTML string with special placeholder tags. Import `src/inertia/root.html` with the `?raw` suffix so Vite inlines its contents as a string:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    @viteHead
+    @inertiaHead
+  </head>
+  <body>
+    @inertia
+    @viteScripts
+  </body>
+</html>
+```
+
+### Template placeholders
+
+| Placeholder | Description |
+| --- | --- |
+| `@inertia` | Replaced with the serialized page data and the root `#app` element |
+| `@inertiaHead` | Replaced with any `<Head>` tags and SEO metadata for the current page |
+| `@viteHead` | Replaced with Vite CSS and preload links from the build manifest |
+| `@viteScripts` | Replaced with Vite JavaScript `<script>` tags |
+
+<Aside type="caution">
+  The `@inertia` placeholder is required: the template is split around it to stream the React body. The `@inertiaHead`, `@viteHead`, and `@viteScripts` tokens are filled wherever they appear, so their placement is flexible, but a missing token means that content is simply not injected.
+</Aside>
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Pages & Rendering" href="/inertia/pages-and-rendering/" description="Render Inertia pages from your controllers." />
+  <LinkCard title="Shared Data & Props" href="/inertia/shared-data-and-props/" description="Share global data and use advanced prop loading strategies." />
+  <LinkCard title="Server-Side Rendering" href="/inertia/ssr/" description="Stream pages on the server with React 19." />
+  <LinkCard title="Quarry CLI" href="/core-concepts/quarry-cli/" description="Explore all available CLI commands including Inertia scaffolding." />
+</CardGrid>

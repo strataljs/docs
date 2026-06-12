@@ -1,0 +1,93 @@
+---
+title: Macroable
+description: Extend classes at runtime by registering custom methods, properties, and getters using the Macroable pattern.
+---
+
+import { Aside } from '@astrojs/starlight/components'
+
+The Macroable pattern lets you add methods, properties, and getters to a class at runtime without modifying the class itself. This is the primary mechanism packages use to extend framework classes -- for example, `@stratal/inertia` adds `ctx.inertia()` and `ctx.flash()` to `RouterContext`.
+
+```typescript
+import { Macroable } from 'stratal/macroable'
+```
+
+## Registering macros
+
+Use `Class.macro()` to attach a new method to the class prototype. The method is available on every instance.
+
+```typescript
+import { RouterContext } from 'stratal/router'
+
+RouterContext.macro('greet', function (this: RouterContext) {
+  return this.json({ message: 'Hello!' })
+})
+
+// Now available on all RouterContext instances:
+// ctx.greet()
+```
+
+## Instance properties
+
+Use `Class.instanceProperty()` to define a property whose value is computed per instance. The factory function runs once for each new instance.
+
+```typescript
+RouterContext.instanceProperty('requestId', function (this: RouterContext) {
+  return crypto.randomUUID()
+})
+```
+
+Each `RouterContext` instance will have its own unique `requestId`.
+
+## Getters
+
+Use `Class.getter()` to define a computed getter. Pass `true` as the third argument to cache the result after the first access (singleton mode).
+
+```typescript
+RouterContext.getter('userAgent', function (this: RouterContext) {
+  return this.header('User-Agent') ?? 'unknown'
+}, true) // true = singleton (computed once per instance)
+```
+
+When singleton mode is off (the default), the getter function runs on every property access.
+
+## Introspection
+
+Check whether a macro, instance property, or getter has been registered:
+
+```typescript
+RouterContext.hasMacro('greet') // true
+```
+
+Remove all registered macros, instance properties, and getters. This is useful in test teardown to reset state between tests.
+
+```typescript
+RouterContext.flushMacros()
+```
+
+## API reference
+
+| Method | Description |
+|---|---|
+| `Class.macro(name, fn)` | Add a prototype method. |
+| `Class.instanceProperty(name, fn)` | Add a per-instance bound property. |
+| `Class.getter(name, fn, singleton?)` | Add a computed getter, optionally cached after first access. |
+| `Class.hasMacro(name)` | Check if a macro, property, or getter is registered. |
+| `Class.flushMacros()` | Remove all registered macros, properties, and getters. |
+
+## Type safety
+
+TypeScript will not know about macros unless you declare them. Use module augmentation to add type information for your custom macros.
+
+```typescript
+declare module 'stratal/router' {
+  interface RouterContext {
+    greet(): Response
+    requestId: string
+    readonly userAgent: string
+  }
+}
+```
+
+<Aside>
+  Register macros during module initialization (in the `onInitialize` lifecycle hook) so they are available before any request is handled.
+</Aside>

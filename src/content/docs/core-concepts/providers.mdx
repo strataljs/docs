@@ -25,18 +25,16 @@ This is shorthand for `{ provide: UsersService, useClass: UsersService }`. The c
 
 ## ClassProvider
 
-A `ClassProvider` maps a token to a class. Use it when the token differs from the class, or when you need to set a specific scope:
+A `ClassProvider` maps a token to a class. Use it when the token differs from the class:
 
 ```typescript
 import { Module } from 'stratal/module'
-import { Scope } from 'stratal/di'
 
 @Module({
   providers: [
     {
       provide: USER_REPOSITORY,
       useClass: PostgresUserRepository,
-      scope: Scope.Singleton,
     },
   ],
 })
@@ -47,7 +45,8 @@ export class UsersModule {}
 | ---------- | ----------------- | -------------------------------------------------- |
 | `provide`  | `InjectionToken`  | The token to register under                        |
 | `useClass` | `Constructor`     | The class to instantiate                           |
-| `scope`    | `Scope`           | Optional. Defaults to `Transient` if not specified |
+
+The provider's scope comes from the scope decorator on the class itself (`@Singleton()`, `@Request()`, or `@Transient()`), so `PostgresUserRepository` carries its own scope.
 
 ## ValueProvider
 

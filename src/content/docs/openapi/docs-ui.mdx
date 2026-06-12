@@ -7,7 +7,7 @@ import { Aside } from '@astrojs/starlight/components';
 
 Stratal serves an interactive API reference directly from your worker using [Swagger UI](https://swagger.io/tools/swagger-ui/) by default. The UI reads the generated OpenAPI spec and renders a browsable, searchable interface where consumers can explore endpoints, view schemas, and try out requests.
 
-The renderer is pluggable — you can swap Swagger UI for any renderer that returns a Hono middleware handler.
+The renderer is pluggable - you can swap Swagger UI for any renderer that returns a Hono middleware handler.
 
 ## Accessing the docs
 
@@ -107,20 +107,19 @@ The `OpenAPIConfigService` is request-scoped, which means you can change the doc
 Here is a middleware that overrides the spec title based on a request header:
 
 ```typescript
-import { inject } from 'stratal/di'
-import { Middleware, MiddlewareHandler } from 'stratal/middleware'
-import { RouterContext } from 'stratal/router'
+import { Transient, inject } from 'stratal/di'
+import type { Middleware, Next, RouterContext } from 'stratal/router'
 import { OPENAPI_TOKENS } from 'stratal/openapi'
 import type { IOpenAPIConfigService } from 'stratal/openapi'
 
-@Middleware()
-export class EnvironmentDocsMiddleware implements MiddlewareHandler {
+@Transient()
+export class EnvironmentDocsMiddleware implements Middleware {
   constructor(
     @inject(OPENAPI_TOKENS.ConfigService)
     private openApiConfig: IOpenAPIConfigService,
   ) {}
 
-  async handle(ctx: RouterContext, next: () => Promise<void>) {
+  async handle(ctx: RouterContext, next: Next) {
     const environment = ctx.header('X-Environment') ?? 'production'
 
     this.openApiConfig.override({

@@ -5,7 +5,25 @@ description: Build and run custom CLI commands for your Stratal application usin
 
 import { Aside } from '@astrojs/starlight/components';
 
-Quarry is Stratal's built-in CLI framework, inspired by [Laravel Artisan](https://laravel.com/docs/artisan). It lets you define custom commands that run against your full application — with access to dependency injection, services, and Cloudflare bindings. Commands extend the `Command` base class from `stratal/quarry`.
+Quarry is Stratal's built-in CLI framework, inspired by [Laravel Artisan](https://laravel.com/docs/artisan). It lets you define custom commands that run against your full application, with access to dependency injection, services, and Cloudflare bindings. Commands extend the `Command` base class from `stratal/quarry`.
+
+## The command entry point
+
+Quarry loads your application through a dedicated entry file at `src/quarry.ts`, kept separate from your Worker entry (`src/index.ts`). Create it once and export a `QuarryRunner`:
+
+```typescript
+// src/quarry.ts
+import { QuarryRunner } from 'stratal/quarry/runner'
+import { AppModule } from './app.module'
+
+export default QuarryRunner.run({
+  imports: [AppModule],
+})
+```
+
+<Aside type="tip" title="Keep commands out of your Worker bundle">
+  Loading the CLI through `src/quarry.ts` keeps your commands and the Quarry runtime out of the deployed Worker. Because the Worker entry (`src/index.ts`) never imports the command entry, the bundler tree-shakes command code away, so it never ships to the edge or counts toward your Worker size.
+</Aside>
 
 ## Running commands
 
@@ -13,11 +31,27 @@ Quarry is Stratal's built-in CLI framework, inspired by [Laravel Artisan](https:
 npx quarry <command> [arguments] [options]
 ```
 
-By default, Quarry uses `./src/index.ts` as the application entry point. To use a different entry file, pass it as the first argument:
+By default, Quarry uses `./src/quarry.ts` as the application entry point. To use a different entry file, pass it as the first argument:
 
 ```bash
 npx quarry ./src/other-entry.ts <command> [arguments] [options]
 ```
+
+### Targeting a Wrangler environment
+
+Use `--env <name>` (or `-e <name>`) to target a `wrangler.jsonc` environment such as `env.staging` or `env.production`. Quarry loads that environment's bindings and vars before running the command. The flag is position-tolerant, so it works before or after the entry path:
+
+```bash
+npx quarry --env staging route:list
+npx quarry -e production db:seed
+npx quarry ./custom/entry.ts --env staging route:list
+```
+
+Omit the flag to use the top-level (default) Wrangler config.
+
+<Aside type="note" title="Remote bindings">
+  If your Wrangler config marks any binding with `remote: true`, Quarry automatically starts a proxy session against the deployed Cloudflare resources and routes those bindings to them during the command run. This requires Wrangler credentials (`wrangler login` or `CLOUDFLARE_API_TOKEN`). Configs with no remote bindings run fully locally and are untouched.
+</Aside>
 
 ## Creating a command
 
@@ -25,7 +59,7 @@ Extend `Command`, define a static `command` signature and `description`, then im
 
 ```typescript
 import { Command } from 'stratal/quarry'
-import { inject } from 'tsyringe'
+import { inject } from 'stratal/di'
 import { TaskService } from '../services/task.service'
 
 export class AddTaskCommand extends Command {
@@ -114,7 +148,7 @@ Use these methods inside `handle()` to write output:
 
 ```typescript
 import { Command } from 'stratal/quarry'
-import { inject } from 'tsyringe'
+import { inject } from 'stratal/di'
 import { TaskService } from '../services/task.service'
 
 export class ListTasksCommand extends Command {
@@ -213,11 +247,31 @@ Stratal ships with built-in Quarry commands. Each command is documented in detai
 
 | Command | Description | Docs |
 | --- | --- | --- |
-| `help` | Show help or list all commands | — |
+| `help` | Show help or list all commands | - |
 | `route:list` | List all registered routes | [Controllers and Routing](/core-concepts/controllers-and-routing/#cli-testing-routes) |
+| `route:types` | Generate TypeScript types for named routes | [Controllers and Routing](/core-concepts/controllers-and-routing/#cli-testing-routes) |
 | `event:list` | List all registered event listeners | [Events](/core-concepts/events/#inspecting-listeners) |
 | `schedule:list` | List all registered cron jobs | [Cron Jobs](/integrations/cron-jobs/#inspecting-cron-jobs) |
+
+### Queues
+
+| Command | Description | Docs |
+| --- | --- | --- |
 | `queue:list` | List all registered queue consumers | [Queues](/integrations/queues/#inspecting-consumers) |
+| `queue:failed` | List failed queue jobs | [Queues](/integrations/queues/) |
+| `queue:retry` | Retry failed queue jobs | [Queues](/integrations/queues/) |
+| `queue:purge` | Delete failed queue jobs without retrying | [Queues](/integrations/queues/) |
+
+### Internationalization
+
+| Command | Description | Docs |
+| --- | --- | --- |
+| `i18n:check` | Audit locales for missing or extra keys | [I18n](/integrations/i18n/) |
+| `i18n:stats` | Show translation coverage per locale | [I18n](/integrations/i18n/) |
+| `i18n:list` | List message keys with per-locale coverage | [I18n](/integrations/i18n/) |
+| `i18n:search` | Search message keys or values | [I18n](/integrations/i18n/) |
+| `i18n:namespaces` | List namespaces with key counts | [I18n](/integrations/i18n/) |
+| `i18n:duplicates` | Find keys sharing identical values | [I18n](/integrations/i18n/) |
 
 ### API and MCP
 
@@ -250,6 +304,134 @@ Stratal ships with built-in Quarry commands. Each command is documented in detai
   Run `npx quarry help` to see all available commands, or `npx quarry help <command>` for usage details on a specific command.
 </Aside>
 
+## Managing queues
+
+Quarry includes commands to inspect queue consumers and work with the failed-job store.
+
+`queue:list` prints every registered consumer alongside the message types it handles:
+
+```bash
+npx quarry queue:list
+```
+
+`queue:failed` lists jobs that exhausted their retries and landed in the failed-job store. It accepts two options:
+
+| Option | Description |
+| --- | --- |
+| `--queue=<name>` | Filter results to a single queue |
+| `--limit=<n>` | Maximum number of jobs to return (default `50`) |
+
+```bash
+npx quarry queue:failed
+npx quarry queue:failed --queue=NOTIFICATIONS_QUEUE
+npx quarry queue:failed --limit=100
+```
+
+The output table includes each job's ID, queue, message type, consumer, attempt count, and the time it failed. The job ID is what you pass to `queue:retry` and `queue:purge`.
+
+`queue:retry` re-sends failed jobs back onto their original queue. Pass a single message ID, or use `--all` to retry every failed job. You must provide one or the other:
+
+| Argument or option | Description |
+| --- | --- |
+| `id` | Optional message ID to retry |
+| `--all` | Retry all failed jobs |
+| `--queue=<name>` | When used with `--all`, only retry jobs from this queue |
+
+```bash
+npx quarry queue:retry 0c1d2e3f-...        # retry one job by ID
+npx quarry queue:retry --all               # retry every failed job
+npx quarry queue:retry --all --queue=EMAIL_QUEUE
+```
+
+`queue:purge` deletes failed jobs from the store without re-sending them. It mirrors the arguments of `queue:retry`:
+
+| Argument or option | Description |
+| --- | --- |
+| `id` | Optional message ID to purge |
+| `--all` | Purge all failed jobs |
+| `--queue=<name>` | When used with `--all`, only purge jobs from this queue |
+
+```bash
+npx quarry queue:purge 0c1d2e3f-...        # delete one job by ID
+npx quarry queue:purge --all               # delete every failed job
+npx quarry queue:purge --all --queue=EMAIL_QUEUE
+```
+
+<Aside type="caution">
+  Both `queue:retry` and `queue:purge` require either a message ID or `--all`. Running them with neither exits with an error so you never accidentally act on the entire store.
+</Aside>
+
+## Inspecting schedules
+
+`schedule:list` prints every registered cron job grouped by its schedule expression, so you can confirm your jobs match the triggers declared in `wrangler.jsonc`:
+
+```bash
+npx quarry schedule:list
+```
+
+The output is a table of schedule expression and job class. If no cron jobs are registered, it reports `No cron jobs found`.
+
+## Serving an MCP server
+
+`mcp:serve` starts a [Model Context Protocol](https://modelcontextprotocol.io/) server over stdio that exposes your API routes as tools for AI agents. Each OpenAPI route becomes a tool, and the full OpenAPI spec is registered as an MCP resource.
+
+```bash
+npx quarry mcp:serve
+```
+
+By default, tool calls are dispatched in-process through your app. The following options tune what is exposed and where requests go:
+
+| Option | Description |
+| --- | --- |
+| `--url=<base-url>` | Dispatch requests to an external URL instead of the in-process app |
+| `--header=<Key:Value>` | Add a header to dispatched requests (repeatable) |
+| `--tag=<tag>` | Only expose routes carrying these OpenAPI tags (repeatable) |
+| `--path=<prefix>` | Only expose routes matching this path prefix |
+
+```bash
+# Expose only routes tagged "Notes"
+npx quarry mcp:serve --tag=Notes
+
+# Expose routes under /api/v1 and dispatch to a running server
+npx quarry mcp:serve --path=/api/v1 --url=http://localhost:8787
+```
+
+To preview which routes would be exposed without starting the server, use `mcp:tools`, which accepts the same `--tag` and `--path` filters:
+
+```bash
+npx quarry mcp:tools
+npx quarry mcp:tools --tag=Notes --path=/api/v1
+```
+
+See [AI Integration](/getting-started/ai/) for the full MCP workflow.
+
+## Auditing translations
+
+Quarry ships a set of `i18n:*` commands for inspecting translation coverage. The base locale is always `en`.
+
+```bash
+# Audit non-en locales for missing or extra keys (exit code 1 on issues, CI-friendly)
+npx quarry i18n:check
+npx quarry i18n:check --locale=fr --prefix=common
+
+# Coverage dashboard per locale
+npx quarry i18n:stats
+
+# List keys with per-locale coverage; --values shows translated strings
+npx quarry i18n:list --locale=fr --values
+
+# Search keys or values by substring; --keys-only skips value matching
+npx quarry i18n:search email --keys-only
+
+# Show namespaces with key counts; --depth drills into sub-namespaces
+npx quarry i18n:namespaces --depth=2
+
+# Find keys that share identical translation values
+npx quarry i18n:duplicates
+```
+
+See [I18n](/integrations/i18n/) for the translation system these commands operate on.
+
 ## How it works
 
 When you run `npx quarry`, the CLI:
@@ -259,7 +441,7 @@ When you run `npx quarry`, the CLI:
 3. Discovers all `Command` subclasses registered as providers
 4. Parses command signatures and delegates to the matched command's `handle()` method
 
-This means your commands have full access to dependency injection, services, and Cloudflare bindings — just like your HTTP handlers.
+This means your commands have full access to dependency injection, services, and Cloudflare bindings, just like your HTTP handlers.
 
 ## Testing commands
 

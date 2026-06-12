@@ -1,24 +1,23 @@
 ---
 title: Middleware
-description: Learn how to create middleware for logging, timing, and request modification, and how to register it on specific routes using the MiddlewareConsumer.
+description: Learn how to create middleware for logging, timing, and request modification, and how to register it globally or scope it to controllers with the Router.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+import { Aside, Steps } from '@astrojs/starlight/components';
 
-Middleware runs before guards and route handlers. It can inspect or modify the request, short-circuit the response, or perform side effects like logging and timing. Stratal uses a per-module configuration approach where each module declares which middleware applies to which routes.
+Middleware runs before guards and route handlers. It can inspect or modify the request, short-circuit the response, or perform side effects like logging and timing. A module registers middleware by implementing `RouteConfigurable` and configuring the `Router` it receives.
 
 ## The Middleware interface
 
 A middleware class implements the `Middleware` interface with a single `handle` method:
 
 ```typescript
-import { Middleware } from 'stratal/middleware'
-import { RouterContext } from 'stratal/router'
 import { Transient } from 'stratal/di'
+import type { Middleware, Next, RouterContext } from 'stratal/router'
 
 @Transient()
 export class LoggingMiddleware implements Middleware {
-  async handle(ctx: RouterContext, next: () => Promise<void>): Promise<void> {
+  async handle(ctx: RouterContext, next: Next): Promise<void> {
     const start = Date.now()
     console.log(`--> ${ctx.c.req.method} ${ctx.c.req.path}`)
 
@@ -32,17 +31,20 @@ export class LoggingMiddleware implements Middleware {
 
 Call `next()` to pass control to the next middleware in the chain (or the route handler if there are no more middlewares). Code before `next()` runs on the way in, and code after runs on the way out.
 
+The `Middleware`, `Next`, and `RouterContext` types are all imported from `stratal/router`.
+
 <Aside type="note">
   Middleware classes should use the `@Transient()` scope decorator. This ensures a fresh instance is created for each resolution, avoiding shared state between requests.
 </Aside>
 
 ## Configuring middleware on a module
 
-Modules register middleware by implementing the `MiddlewareConfigurable` interface. This gives you a `configure` method with access to the `MiddlewareConsumer`:
+Modules register middleware by implementing the `RouteConfigurable` interface. This gives you a `configureRoutes` method that receives a `Router`:
 
 ```typescript
 import { Module } from 'stratal/module'
-import { MiddlewareConfigurable, MiddlewareConsumer } from 'stratal/middleware'
+import type { RouteConfigurable } from 'stratal/router'
+import { Router } from 'stratal/router'
 import { LoggingMiddleware } from './logging.middleware'
 import { UsersController } from './users.controller'
 
@@ -50,138 +52,139 @@ import { UsersController } from './users.controller'
   controllers: [UsersController],
   providers: [LoggingMiddleware],
 })
-export class UsersModule implements MiddlewareConfigurable {
-  configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(LoggingMiddleware)
-      .forRoutes('*')
+export class UsersModule implements RouteConfigurable {
+  configureRoutes(router: Router): void {
+    router.middleware(LoggingMiddleware)
   }
 }
 ```
 
-The `configure` method is called once during module initialization. It does not run on every request.
-
-## The MiddlewareConsumer API
-
-The consumer provides a fluent API for declaring middleware:
-
-### apply()
-
-Pass one or more middleware classes to `apply()`:
-
-```typescript
-consumer
-  .apply(CorsMiddleware, LoggingMiddleware)
-  .forRoutes('*')
-```
-
-Middlewares execute in the order they are listed. In this example, `CorsMiddleware` runs first, then `LoggingMiddleware`.
-
-### forRoutes()
-
-`forRoutes()` defines which routes the middleware applies to. It accepts three types of targets:
-
-**Global wildcard** applies to all routes:
-
-```typescript
-consumer
-  .apply(LoggingMiddleware)
-  .forRoutes('*')
-```
-
-**Controller class** applies to all routes in that controller:
-
-```typescript
-consumer
-  .apply(AuthMiddleware)
-  .forRoutes(UsersController, OrdersController)
-```
-
-**Route info** applies to a specific path and optionally a specific HTTP method or [version](/core-concepts/versioning/):
-
-```typescript
-consumer
-  .apply(RateLimitMiddleware)
-  .forRoutes(
-    { path: '/api/auth/login', method: 'post' },
-    { path: '/api/auth/register', method: 'post' },
-    { path: '/api/users', version: '1' }, // matches versioned path /v1/api/users
-  )
-```
-
-You can mix target types in a single call:
-
-```typescript
-consumer
-  .apply(AuditMiddleware)
-  .forRoutes(AdminController, { path: '/api/billing', method: 'post' })
-```
-
-### exclude()
-
-Use `exclude()` to skip specific routes. This is useful when you want middleware on most routes but need to carve out exceptions:
-
-```typescript
-consumer
-  .apply(AuthMiddleware)
-  .exclude('/api/health', '/api/auth/login')
-  .forRoutes('*')
-```
-
-Exclusions also accept route info objects for method-specific exclusions:
-
-```typescript
-consumer
-  .apply(AuthMiddleware)
-  .exclude(
-    { path: '/api/health', method: 'get' },
-    { path: '/api/auth/login', method: 'post' },
-  )
-  .forRoutes('*')
-```
+`configureRoutes` is called once during module initialization. It does not run on every request.
 
 <Aside type="tip">
-  `exclude()` is chainable, so you can call it before `forRoutes()`. The order is always: `apply()` then optionally `exclude()` then `forRoutes()`.
+  `RouteConfigurable` is optional. Add it only when a module needs middleware or route grouping. A plain `@Module({})` without it is valid.
 </Aside>
 
-## Multiple middleware configurations
+## The Router API
 
-A single module can register multiple middleware chains. Call `consumer.apply()` multiple times:
+The `Router` is a fluent builder. Every configuration method returns the same router, so calls chain together.
+
+### middleware()
+
+`middleware()` registers one or more middleware classes scoped to the current module's controllers. Pass them in the order you want them to run:
+
+```typescript
+configureRoutes(router: Router): void {
+  router.middleware(CorsMiddleware, LoggingMiddleware)
+}
+```
+
+In this example, `CorsMiddleware` runs first, then `LoggingMiddleware`, for every route declared by this module's controllers.
+
+### use()
+
+`use()` registers global middleware that applies to every route in the entire application, not just the current module's controllers:
+
+```typescript
+configureRoutes(router: Router): void {
+  router.use(SecurityHeadersMiddleware, CorsMiddleware)
+}
+```
+
+<Aside type="caution">
+  `use()` is only callable on the root `Router`. Calling it inside a `group()` callback throws a `RouterError`, because global middleware cannot be scoped to a subset of controllers.
+</Aside>
+
+### group()
+
+`group()` scopes middleware and other route configuration to a specific set of controllers. Pass the controllers and a callback that configures them:
+
+```typescript
+configureRoutes(router: Router): void {
+  router.group([AdminController], (admin) => {
+    admin.middleware(AdminAuthMiddleware)
+  })
+}
+```
+
+Controllers listed in a `group()` are removed from the module's default scope, so middleware registered directly on `router` does not apply to them. The callback receives a router without `use()`, since global middleware belongs on the root.
+
+Because every method returns the router, you can combine middleware with prefixes, domains, versions, and names inside a group:
+
+```typescript
+configureRoutes(router: Router): void {
+  router.group([TenantController, BillingController], (r) => {
+    r.prefix('/tenant')
+      .domain('{tenant}.myapp.com')
+      .middleware(TenantMiddleware)
+  })
+}
+```
+
+The scoped configuration methods available on the router and inside a group are:
+
+| Method                       | Applies to scope                                            |
+| ---------------------------- | ----------------------------------------------------------- |
+| `middleware(...middlewares)` | Middleware classes for controllers in this scope            |
+| `prefix(path, params?)`      | A path prefix, with an optional Zod schema for its params   |
+| `domain(pattern)`            | A domain pattern for controllers in this scope              |
+| `name(prefix)`               | A name prefix for routes in this scope                      |
+| `version(version)`           | An API version (`string` or `string[]`) for this scope      |
+| `throttle(name)`             | A named rate limiter for controllers in this scope          |
+| `hideFromDocs(hide?)`        | Hide or show this scope's routes in the OpenAPI document     |
+
+`use()` is the only method that is not scoped: it always registers global middleware on the whole application.
+
+## Targeting routes
+
+Targeting is expressed through scope rather than path strings:
+
+<Steps>
+
+1. To run middleware on **every route in the app**, call `router.use(...)`.
+
+2. To run middleware on **every route in this module**, call `router.middleware(...)` on the module's router.
+
+3. To run middleware on **specific controllers**, list them in `router.group([...], ...)` and call `middleware(...)` inside the callback.
+
+</Steps>
+
+To target a versioned path, scope the group with `.version()`. For a prefixed path, scope it with `.prefix()`. See [API Versioning](/core-concepts/versioning/) for how versions map to URL segments.
+
+## Multiple groups and scopes
+
+A single module can mix global middleware, module-wide middleware, and several groups:
 
 ```typescript
 @Module({
-  controllers: [UsersController, HealthController],
-  providers: [LoggingMiddleware, AuthMiddleware, RateLimitMiddleware],
+  controllers: [UsersController, AdminController, HealthController],
+  providers: [LoggingMiddleware, AuthMiddleware, AdminAuthMiddleware],
 })
-export class AppModule implements MiddlewareConfigurable {
-  configure(consumer: MiddlewareConsumer) {
-    // Global logging on every route except health
-    consumer
-      .apply(LoggingMiddleware)
-      .exclude('/api/health')
-      .forRoutes('*')
+export class AppModule implements RouteConfigurable {
+  configureRoutes(router: Router): void {
+    // Global logging on every route in the app
+    router.use(LoggingMiddleware)
 
-    // Auth on the users controller
-    consumer
-      .apply(AuthMiddleware)
-      .forRoutes(UsersController)
+    // Auth on this module's remaining controllers (Users, Health)
+    router.middleware(AuthMiddleware)
 
-    // Rate limiting on login
-    consumer
-      .apply(RateLimitMiddleware)
-      .forRoutes({ path: '/api/auth/login', method: 'post' })
+    // Stricter auth scoped to the admin controller only
+    router.group([AdminController], (admin) => {
+      admin.middleware(AdminAuthMiddleware)
+    })
   }
 }
 ```
+
+Because `AdminController` is listed in the group, the module-wide `AuthMiddleware` does not apply to it. The group's `AdminAuthMiddleware` applies instead.
 
 ## Dependency injection in middleware
 
 Middleware classes are resolved from the request-scoped DI container, so you can inject services:
 
 ```typescript
-import { Middleware } from 'stratal/middleware'
-import { RouterContext } from 'stratal/router'
 import { Transient, inject } from 'stratal/di'
+import type { Middleware, Next, RouterContext } from 'stratal/router'
 import { LOGGER_TOKENS, type LoggerService } from 'stratal/logger'
 
 @Transient()
@@ -190,7 +193,7 @@ export class RequestLoggerMiddleware implements Middleware {
     @inject(LOGGER_TOKENS.LoggerService) private readonly logger: LoggerService,
   ) {}
 
-  async handle(ctx: RouterContext, next: () => Promise<void>): Promise<void> {
+  async handle(ctx: RouterContext, next: Next): Promise<void> {
     this.logger.info('Request received', {
       method: ctx.c.req.method,
       path: ctx.c.req.path,
@@ -203,7 +206,7 @@ export class RequestLoggerMiddleware implements Middleware {
 
 ## Short-circuiting a response
 
-A middleware can respond directly without calling `next()`. This stops the chain and returns the response immediately:
+A middleware can respond directly by returning a `Response` instead of calling `next()`. This stops the chain, and the route handler never runs:
 
 ```typescript
 @Transient()
@@ -212,7 +215,7 @@ export class MaintenanceMiddleware implements Middleware {
     @inject(DI_TOKENS.CloudflareEnv) private readonly env: StratalEnv,
   ) {}
 
-  async handle(ctx: RouterContext, next: () => Promise<void>): Promise<void> {
+  async handle(ctx: RouterContext, next: Next): Promise<Response | void> {
     if (this.env.MAINTENANCE_MODE === 'true') {
       return ctx.json({ message: 'Service is under maintenance' }, 503)
     }
@@ -223,21 +226,22 @@ export class MaintenanceMiddleware implements Middleware {
 ```
 
 <Aside type="caution">
-  If you do not call `next()`, the route handler and any subsequent middleware will not execute. Make sure this is intentional.
+  If you do not call `next()` and do not return a `Response`, the route handler and any subsequent middleware will not execute. Make sure short-circuiting is intentional.
 </Aside>
 
-## Route matching
+## Rate limiting
 
-Stratal supports several path matching patterns in `forRoutes()` and `exclude()`:
+For request throttling, prefer the framework's built-in named rate limiters over hand-rolled middleware. Scope a named limiter with `throttle()`:
 
-| Pattern              | Matches                                      |
-| -------------------- | -------------------------------------------- |
-| `*`                  | All routes                                   |
-| `/api/users`         | Exact match                                  |
-| `/api/*`             | Any path starting with `/api/`               |
-| `/api/users/:id`     | Path with parameter (e.g., `/api/users/123`) |
+```typescript
+configureRoutes(router: Router): void {
+  router.group([UploadsController], (uploads) => {
+    uploads.prefix('/uploads').throttle('uploads')
+  })
+}
+```
 
-When a `method` is specified in a route info object, the middleware only runs for that HTTP method. Without a method, the middleware runs for all methods on that path.
+See [Rate Limiting](/guides/rate-limiting/) for registering named limiters.
 
 ## Execution order
 
@@ -246,7 +250,8 @@ The complete request lifecycle shows where middleware fits:
 ```
 Request
   -> Request-scoped container setup
-  -> User-defined middleware (from configure())
+  -> Global middleware (router.use)
+  -> Scoped middleware (router.middleware / group middleware)
   -> Guards (controller-level, then method-level)
   -> Schema validation (@Route body, params, query)
   -> Route handler
@@ -255,9 +260,9 @@ Request
 
 Within middleware, execution order is determined by:
 
-1. **Module order** — middleware from modules imported earlier runs before middleware from modules imported later.
-2. **Registration order** — within a single `configure()` call, middleware registered first runs first.
-3. **Chain order** — within a single `apply()` call, middleware listed first runs first.
+1. **Global before scoped**: middleware from `use()` runs before scoped middleware.
+2. **Registration order**: within a single `configureRoutes()` call, middleware registered first runs first.
+3. **Chain order**: within a single `middleware()` or `use()` call, middleware listed first runs first.
 
 ## Accessing the request container
 
@@ -266,7 +271,7 @@ Every middleware has access to the request-scoped DI container through `RouterCo
 ```typescript
 @Transient()
 export class CorrelationMiddleware implements Middleware {
-  async handle(ctx: RouterContext, next: () => Promise<void>): Promise<void> {
+  async handle(ctx: RouterContext, next: Next): Promise<void> {
     const requestId = ctx.header('X-Request-ID') ?? crypto.randomUUID()
 
     // Register the request ID in the request container
@@ -283,5 +288,7 @@ Services resolved later in the request (guards, controllers, other middleware) c
 ## Next steps
 
 - [Guards](/guides/guards/) to learn about access control that runs after middleware.
+- [Domain Routing](/guides/domain-routing/) for routing requests based on subdomain patterns.
+- [Signed URLs](/guides/signed-urls/) for generating tamper-proof, expiring links.
 - [Modules](/core-concepts/modules/) for how modules organize middleware and other providers.
 - [Dependency Injection](/core-concepts/dependency-injection/) for more on the request-scoped container.

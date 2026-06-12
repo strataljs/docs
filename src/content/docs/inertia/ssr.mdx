@@ -1,0 +1,166 @@
+---
+title: Server-Side Rendering
+description: Enable streaming server-side rendering for Inertia pages with React 19 to improve initial load performance and SEO.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Server-side rendering (SSR) generates the HTML for an Inertia page on the server before sending it to the browser. Visitors see rendered content immediately rather than waiting for JavaScript to load and execute. SSR improves initial load performance, provides better SEO, and ensures content is accessible to crawlers that do not execute JavaScript.
+
+Stratal renders with **React 19 streaming** (`renderToReadableStream`): the document shell (server-resolved SEO tags and Vite CSS) flushes immediately, and the app body streams progressively. This lowers time-to-first-byte compared to buffering the entire page before sending a single byte.
+
+## Configuration
+
+Enable SSR by adding the `ssr` option to `InertiaModule.forRoot()`:
+
+```typescript
+import { Module } from 'stratal/module'
+import { InertiaModule } from '@stratal/inertia'
+import rootView from './inertia/root.html?raw'
+
+@Module({
+  imports: [
+    InertiaModule.forRoot({
+      rootView,
+      ssr: {
+        bundle: () => import('./inertia/ssr'),
+        disabled: ['admin/*'],  // glob patterns where SSR is skipped
+      },
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+| Option     | Type                       | Description                                                       |
+| ---------- | -------------------------- | ----------------------------------------------------------------- |
+| `bundle`   | `() => Promise<module>`    | A function that dynamically imports the SSR entry file            |
+| `disabled` | `string[]`                 | Glob patterns for routes that render client-only (no SSR)        |
+
+<Aside type="tip">
+  `quarry inertia:install` wires this for you: it scaffolds `src/inertia/ssr.tsx` and adds the `ssr: { bundle: () => import('./inertia/ssr') }` option to your `InertiaModule.forRoot()` call.
+</Aside>
+
+## The SSR entry file
+
+Create a file at `src/inertia/ssr.tsx` (matching your `bundle` import). It uses `createInertiaSsrApp` from `@stratal/inertia/ssr`, which wires Inertia's `App`, head collection, and `renderToReadableStream`, and returns the `render(page)` function the module expects:
+
+```tsx
+import { createInertiaSsrApp } from '@stratal/inertia/ssr'
+
+export const { render } = createInertiaSsrApp({
+  resolve: async (name) => {
+    const pages = import.meta.glob('./pages/**/*.tsx')
+    const page = await pages[`./pages/${name}.tsx`]?.()
+    if (!page) throw new Error(`Page not found: ${name}`)
+    return page
+  },
+})
+```
+
+The `render` function receives the serialized page object from the server, resolves the correct React component, and streams the rendered HTML. Stratal pipes that stream into the root template before sending the response.
+
+### Options
+
+| Option    | Type                                                | Description                                                                   |
+| --------- | --------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `resolve` | `(name: string) => Component \| Promise<Component>` | Resolve a page component by name. Typically backed by `import.meta.glob`.     |
+| `setup`   | `({ App, props }) => ReactNode`                     | Optional wrapper for application-level providers (theme, store, i18n, ...).   |
+| `title`   | `HeadManagerTitleCallback`                          | Optional document-title callback applied to page titles.                      |
+
+Wrap the app in providers with `setup`:
+
+```tsx
+export const { render } = createInertiaSsrApp({
+  resolve: async (name) => {
+    const pages = import.meta.glob('./pages/**/*.tsx')
+    const page = await pages[`./pages/${name}.tsx`]?.()
+    if (!page) throw new Error(`Page not found: ${name}`)
+    return page
+  },
+  setup: ({ App, props }) => (
+    <ThemeProvider>
+      <App {...props} />
+    </ThemeProvider>
+  ),
+})
+```
+
+<Aside type="caution">
+  Inertia's `<Head>` tags are collected during the synchronous shell render. A `<Head>` placed inside a *suspended* boundary will not reach `<head>`. Use server-side `ctx.seo()` for document metadata: it is resolved before render and injected into the shell regardless of streaming.
+</Aside>
+
+## Building the SSR bundle
+
+Build the SSR bundle with the Inertia CLI:
+
+```bash
+npx quarry inertia:build --ssr
+```
+
+The build runs in two phases: it bundles the browser assets first, then the worker (including the SSR bundle), inlining the client manifest so the worker can resolve hashed asset URLs at runtime. Run this as part of your deploy step.
+
+## Disabling SSR for specific routes
+
+Some pages (such as admin dashboards or heavily client-only views) may not benefit from SSR. Use the `disabled` option to exclude them with glob patterns matched against the request pathname:
+
+```typescript
+InertiaModule.forRoot({
+  rootView,
+  ssr: {
+    bundle: () => import('./inertia/ssr'),
+    disabled: [
+      'admin/*',       // skip all admin pages
+      'dashboard',     // skip the dashboard page
+      'reports/**',    // skip all nested report pages
+    ],
+  },
+})
+```
+
+Disabled routes render a buffered, client-only document: an empty `#app` div that the client bundle hydrates.
+
+## Per-request opt-out
+
+Disable SSR for a single request inside a controller handler with `ctx.withoutSsr()`:
+
+```typescript
+import { Controller, IController, RouterContext } from 'stratal/router'
+import { InertiaGet } from '@stratal/inertia'
+
+@Controller('/tools')
+export class ToolsController implements IController {
+  @InertiaGet('/editor')
+  async editor(ctx: RouterContext) {
+    ctx.withoutSsr()
+
+    return ctx.inertia('tools/Editor', {
+      // ... props
+    })
+  }
+}
+```
+
+This is useful when a handler decides to skip SSR based on runtime conditions rather than a static route pattern.
+
+<Aside type="note">
+  SSR does **not** silently degrade. If the SSR bundle fails to load or throws during rendering, the error surfaces as a 500 response rather than quietly falling back to a client-only render. This keeps SSR failures visible instead of masking them.
+</Aside>
+
+## How it works
+
+When SSR is enabled and a non-Inertia request arrives (a full page load rather than an XHR visit):
+
+<Steps>
+
+1. Stratal calls the SSR bundle's `render` function with the page data.
+
+2. The document shell (head tags plus the opening `#app` wrapper) is flushed immediately.
+
+3. React's `renderToReadableStream` output is piped into the response as it renders.
+
+4. The wrapper is closed and the Vite script tags are appended. The browser hydrates the streamed markup with React.
+
+</Steps>
+
+On subsequent Inertia visits (XHR requests), SSR is not involved. The server returns JSON props and the client-side router swaps the page component directly.

@@ -106,7 +106,7 @@ export class ProxyController {
 ```
 
 <Aside type="note">
-  There is no need to set `hideFromDocs: true` on `@All` routes — they are excluded automatically.
+  There is no need to set `hideFromDocs: true` on `@All` routes - they are excluded automatically.
 </Aside>
 
 ## Override behavior
@@ -120,20 +120,19 @@ For more dynamic control, use the `OpenAPIConfigService` to apply a custom route
 Inject the config service in a middleware and call `override()` with a `routeFilter` function:
 
 ```typescript
-import { inject } from 'stratal/di'
-import { Middleware, MiddlewareHandler } from 'stratal/middleware'
-import { RouterContext } from 'stratal/router'
+import { Transient, inject } from 'stratal/di'
+import type { Middleware, Next, RouterContext } from 'stratal/router'
 import { OPENAPI_TOKENS } from 'stratal/openapi'
 import type { IOpenAPIConfigService } from 'stratal/openapi'
 
-@Middleware()
-export class DocsFilterMiddleware implements MiddlewareHandler {
+@Transient()
+export class DocsFilterMiddleware implements Middleware {
   constructor(
     @inject(OPENAPI_TOKENS.ConfigService)
     private openApiConfig: IOpenAPIConfigService,
   ) {}
 
-  async handle(ctx: RouterContext, next: () => Promise<void>) {
+  async handle(ctx: RouterContext, next: Next) {
     this.openApiConfig.override({
       routeFilter: (path, pathItem) => {
         // Only include /api/v1 routes in the spec

@@ -131,31 +131,16 @@ async update(ctx: RouterContext) {
 
 ## Validation error responses
 
-When validation fails, Stratal returns a structured `400 Bad Request` response with details about every field that failed:
+When validation fails, Stratal throws a `SchemaValidationError`, which returns a `400 Bad Request`. The default response body contains the error message and a timestamp:
 
 ```json
 {
-  "code": 1003,
-  "message": "Validation error",
-  "timestamp": "2026-02-26T12:00:00.000Z",
-  "metadata": {
-    "issues": [
-      {
-        "path": "email",
-        "message": "Invalid email address",
-        "code": "invalid_format"
-      },
-      {
-        "path": "name",
-        "message": "Required",
-        "code": "invalid_type"
-      }
-    ]
-  }
+  "message": "Schema validation failed",
+  "timestamp": "2026-02-26T12:00:00.000Z"
 }
 ```
 
-Each issue in the `metadata.issues` array includes:
+`SchemaValidationError` carries an `issues` array describing every field that failed. Each issue includes:
 
 | Field     | Description                              |
 | --------- | ---------------------------------------- |
@@ -163,8 +148,26 @@ Each issue in the `metadata.issues` array includes:
 | `message` | A human-readable error message           |
 | `code`    | The Zod error code (`invalid_type`, `too_small`, `invalid_format`, etc.) |
 
+To include those issues in the response body, register a renderable for `SchemaValidationError` in your [exception handler](/guides/error-handling/):
+
+```typescript
+import { ExceptionHandler } from 'stratal/errors'
+import { SchemaValidationError } from 'stratal/router'
+
+export class AppExceptionHandler extends ExceptionHandler {
+  register() {
+    this.renderable(SchemaValidationError, (error) => {
+      return Response.json(
+        { message: error.message, issues: error.issues },
+        { status: 400 },
+      )
+    })
+  }
+}
+```
+
 <Aside type="note">
-  In development, the response also includes a `stack` trace for debugging. This is automatically stripped in production.
+  In development, the default response also includes a `stack` trace for debugging. This is automatically stripped in production.
 </Aside>
 
 ## Common error schemas
@@ -238,7 +241,7 @@ export class UsersController implements IController {
 
 ## OpenAPI integration
 
-Every Zod schema you pass to `@Route` is automatically reflected in the generated OpenAPI specification. Stratal re-exports `z` from `@hono/zod-openapi`, which extends Zod with an `.openapi()` method for richer API documentation.
+Every Zod schema you pass to `@Route` is automatically reflected in the generated OpenAPI specification. The `z` you import from `stratal/validation` extends Zod with an `.openapi()` method for richer API documentation.
 
 ### Field descriptions
 
@@ -255,7 +258,7 @@ const createProductSchema = z.object({
 
 ### The `.openapi()` method
 
-For richer documentation, use `.openapi()` from `@hono/zod-openapi`. It accepts an object with `example`, `description`, `deprecated`, and other OpenAPI schema properties:
+For richer documentation, use the `.openapi()` method. It accepts an object with `example`, `description`, `deprecated`, and other OpenAPI schema properties:
 
 ```typescript
 import { z } from 'stratal/validation'
@@ -347,22 +350,19 @@ const listQuerySchema = z.object({
 
 When the [Internationalization](/integrations/i18n/) module is configured, validation error messages are automatically translated based on the request locale. Stratal includes built-in translations for all standard Zod error types.
 
-The locale is determined from the `X-Locale` request header. If no header is present, the default locale is used.
+The request locale is resolved by the i18n module's detection strategy, which defaults to the `locale` cookie. See [Internationalization](/integrations/i18n/) for the available strategies.
 
 ```
-// Request with X-Locale: fr
+// Request resolved to the 'fr' locale
 POST /api/users
 { "email": "invalid" }
 
 // Response messages are in French
 {
-  "code": 1003,
   "message": "Erreur de validation",
-  "metadata": {
-    "issues": [
-      { "path": "email", "message": "Adresse e-mail invalide", "code": "invalid_format" }
-    ]
-  }
+  "issues": [
+    { "path": "email", "message": "Adresse e-mail invalide", "code": "invalid_format" }
+  ]
 }
 ```
 

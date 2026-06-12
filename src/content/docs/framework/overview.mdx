@@ -1,6 +1,6 @@
 ---
 title: "@stratal/framework"
-description: Higher-level modules for database, auth, RBAC, factories, and guards built on the Stratal core.
+description: Higher-level modules for database, auth, access control, factories, and guards built on the Stratal core.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -19,10 +19,10 @@ The package is organized into sub-path exports so you only import what you need:
 
 | Import path | Provides |
 | --- | --- |
-| `@stratal/framework/database` | `DatabaseModule`, `@InjectDB`, `DatabaseSchemaRegistry`, plugins |
+| `@stratal/framework/database` | `DatabaseModule`, `@InjectDB`, `DATABASE_TOKENS`, plugins |
 | `@stratal/framework/auth` | `AuthModule`, `AuthService` |
-| `@stratal/framework/context` | `AuthContext` |
-| `@stratal/framework/rbac` | `RbacModule`, `CasbinService` |
+| `@stratal/framework/context` | `AuthContext`, `AuthUser` |
+| `@stratal/framework/access-control` | `createAccessControl`, `AccessService`, `extendRole` |
 | `@stratal/framework/guards` | `AuthGuard` factory |
 | `@stratal/framework/factory` | `Factory` base class, `Sequence` |
 
@@ -32,8 +32,8 @@ The core `stratal` package provides the module system, DI container, router, eve
 
 - **Database** uses the DI container for connection management and the event system for database events.
 - **Auth** uses middleware and request-scoped providers from the core.
-- **RBAC** integrates with the DI container and request scope for per-request authorization.
-- **Guards** use the core guard system (`CanActivate`) with auth and RBAC checks.
+- **Access control** integrates with `AuthContext` so the current user's roles are available in every request without a database round-trip.
+- **Guards** use the core guard system (`CanActivate`) with auth and permission checks.
 - **Factories** work with the database service for persistence.
 
 You can use the core package without `@stratal/framework` if you don't need these features.
@@ -42,5 +42,5 @@ You can use the core package without `@stratal/framework` if you don't need thes
 
 - [Database](/framework/database/) for ORM integration and multi-connection support.
 - [Auth](/framework/auth/) for authentication with Better Auth.
-- [RBAC](/framework/rbac/) for role-based access control.
+- [Access Control](/framework/access-control/) for declaring resources, roles, and permissions.
 - [Auth Guard](/framework/auth-guard/) for protecting routes with auth and permission checks.

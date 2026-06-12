@@ -1,0 +1,180 @@
+---
+title: Flash Messages
+description: Store short-lived data between requests using flash messages with the built-in CookieFlashStore or a custom store.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Flash messages are short-lived pieces of data that persist for exactly one subsequent request and are then discarded. They are typically used to display success or error messages after form submissions, redirects, or other state-changing operations. For example, after creating a new record you might flash a success message, redirect to an index page, and show that message once.
+
+## Configuration
+
+Pass a flash store instance to `InertiaModule.forRoot()` to enable flash messages:
+
+```typescript
+import { Module } from 'stratal/module'
+import { InertiaModule, CookieFlashStore } from '@stratal/inertia'
+import rootView from './inertia/root.html'
+
+@Module({
+  imports: [
+    InertiaModule.forRoot({
+      rootView,
+      flash: {
+        store: new CookieFlashStore({
+          secret: env.APP_SECRET,
+        }),
+      },
+    }),
+  ],
+})
+export class AppModule {}
+```
+
+## Built-in CookieFlashStore
+
+`CookieFlashStore` stores flash data in an HMAC-signed cookie. It works out of the box with no external dependencies.
+
+```typescript
+import { CookieFlashStore } from '@stratal/inertia'
+
+new CookieFlashStore({
+  secret: env.APP_SECRET,      // HMAC signing secret
+  cookie: 'stratal_flash',     // cookie name (default)
+  cookieOptions: {             // optional
+    path: '/',
+    httpOnly: true,
+    sameSite: 'Lax',
+  },
+})
+```
+
+| Option          | Type     | Default            | Description                          |
+| --------------- | -------- | ------------------ | ------------------------------------ |
+| `secret`        | `string` | **required**       | Secret used to sign the cookie value |
+| `cookie`        | `string` | `'stratal_flash'`  | Name of the cookie                   |
+| `cookieOptions` | `object` | `{}`               | Standard cookie attributes           |
+
+<Aside type="caution">
+  Keep your `secret` value private. If it is compromised, an attacker can forge flash data. Use an environment variable or secret binding rather than a hardcoded string.
+</Aside>
+
+## Setting flash data
+
+Use `ctx.flash()` inside any controller handler to store data for the next request:
+
+```typescript
+import { Controller, IController, RouterContext } from 'stratal/router'
+import { InertiaPost } from '@stratal/inertia'
+
+@Controller('/posts')
+export class PostsController implements IController {
+  @InertiaPost('/')
+  async store(ctx: RouterContext) {
+    // ... create the post
+    ctx.flash('success', 'Post created successfully!')
+    return ctx.redirect('/posts')
+  }
+}
+```
+
+You can flash any serializable value:
+
+```typescript
+ctx.flash('success', 'Item created!')
+ctx.flash('error', 'Something went wrong.')
+ctx.flash('formData', { title: 'Draft', body: '' })
+```
+
+## Reading flash data on the frontend
+
+Flash data is automatically merged into the page props on the next request. Access it through Inertia's `usePage()` hook:
+
+```tsx
+import { usePage } from '@inertiajs/react'
+
+export default function PostsIndex({ posts }) {
+  const { flash } = usePage().props
+
+  return (
+    <div>
+      {flash.success && (
+        <div className="alert alert-success">{flash.success}</div>
+      )}
+      {flash.error && (
+        <div className="alert alert-error">{flash.error}</div>
+      )}
+      {/* render posts */}
+    </div>
+  )
+}
+```
+
+<Aside type="note">
+  Flash data is automatically read before and cleared after each request by `InertiaMiddleware`. You do not need to manage the lifecycle manually.
+</Aside>
+
+## Custom flash stores
+
+If cookies are not suitable for your use case (for example, when flash payloads are large or you need server-side storage), implement the `FlashStore` interface:
+
+```typescript
+interface FlashStore {
+  read(ctx: RouterContext): Promise<Record<string, unknown>>
+  write(ctx: RouterContext, data: Record<string, unknown>): Promise<void>
+  clear(ctx: RouterContext): Promise<void>
+}
+```
+
+| Method  | Purpose                                              |
+| ------- | ---------------------------------------------------- |
+| `read`  | Retrieve the current flash data for this request     |
+| `write` | Persist flash data so it is available on the next request |
+| `clear` | Remove flash data after it has been read             |
+
+### Example: KV-based flash store
+
+The following example stores flash data in a Cloudflare KV namespace, keyed by a session identifier:
+
+```typescript
+import type { FlashStore } from '@stratal/inertia'
+import type { RouterContext } from 'stratal/router'
+
+export class KvFlashStore implements FlashStore {
+  constructor(private readonly binding: KVNamespace) {}
+
+  async read(ctx: RouterContext): Promise<Record<string, unknown>> {
+    const key = this.getKey(ctx)
+    const data = await this.binding.get(key, 'json')
+    return (data as Record<string, unknown>) ?? {}
+  }
+
+  async write(ctx: RouterContext, data: Record<string, unknown>): Promise<void> {
+    const key = this.getKey(ctx)
+    await this.binding.put(key, JSON.stringify(data), {
+      expirationTtl: 300, // 5 minutes
+    })
+  }
+
+  async clear(ctx: RouterContext): Promise<void> {
+    const key = this.getKey(ctx)
+    await this.binding.delete(key)
+  }
+
+  private getKey(ctx: RouterContext): string {
+    const sessionId = ctx.c.req.cookie('session_id')
+    return `flash:${sessionId}`
+  }
+}
+```
+
+Register it the same way as the built-in store:
+
+```typescript
+InertiaModule.forRoot({
+  rootView,
+  flash: {
+    store: new KvFlashStore(env.FLASH_KV),
+  },
+})
+```

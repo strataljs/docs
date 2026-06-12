@@ -102,9 +102,9 @@ async lowPriority(ctx: EventContext<'after.User.create'>) {}
 
 Blocking controls whether `emit()` waits for the handler to complete:
 
-- **`before.*` events** — always blocking (`true`). The emitter waits for all handlers before proceeding.
-- **`after.*` events** — non-blocking (`false`). Handlers run in the background via `waitUntil`.
-- **Custom events** — blocking (`true`) by default.
+- **`before.*` events** - always blocking (`true`). The emitter waits for all handlers before proceeding.
+- **`after.*` events** - non-blocking (`false`). Handlers run in the background via `waitUntil`.
+- **Custom events** - blocking (`true`) by default.
 
 You can override the default with the `blocking` option:
 
@@ -193,6 +193,6 @@ This outputs a table with the following columns:
 
 ## Next steps
 
-- [Database Events](/framework/database-events/) for events emitted automatically by database operations.
+- [Database Events](/framework/database-events/) for events emitted automatically by database operations, including entity mutation events that carry full before and after entity snapshots.
 - [Lifecycle Hooks](/core-concepts/lifecycle-hooks/) for module-level initialization and shutdown events.
 - [Providers](/core-concepts/providers/) for registering listeners as providers.
