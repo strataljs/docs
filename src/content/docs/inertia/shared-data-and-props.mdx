@@ -32,19 +32,15 @@ InertiaModule.forRoot({
   rootView,
   sharedData: {
     appName: 'My App',
-    currentUser: (ctx: RouterContext) => {
-      return ctx.c.get('user') ?? null
-    },
-    flash: (ctx: RouterContext) => {
-      return {
-        success: ctx.c.get('flashSuccess') ?? null,
-        error: ctx.c.get('flashError') ?? null,
-      }
-    },
-    locale: (ctx: RouterContext) => ctx.c.get('locale') ?? 'en',
+    currentUser: (ctx: RouterContext) => ctx.c.get('user') ?? null,
+    locale: (ctx: RouterContext) => ctx.getLocale(),
   },
 })
 ```
+
+<Aside type="note">
+  `ctx.c.get(key)` reads a value your middleware stored on the request context, such as an authenticated user. `ctx.getLocale()` is the typed accessor for the resolved request locale. Flash messages are shared automatically, see [Flash Messages](/inertia/flash-messages/).
+</Aside>
 
 <Aside type="tip">
   Resolver functions can be asynchronous. Return a `Promise` and it will be awaited before the page is rendered.
