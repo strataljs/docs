@@ -17,13 +17,13 @@ Extend the `Seeder` base class and implement the `run()` method. Use constructor
 
 ```typescript
 import { Seeder } from 'stratal/seeder'
-import { inject, Transient } from 'stratal/di'
+import { inject, Transient, DI_TOKENS } from 'stratal/di'
 import type { DatabaseService } from '@stratal/framework/database'
 
 @Transient()
 export class UserSeeder extends Seeder {
   constructor(
-    @inject('Database') private readonly db: DatabaseService,
+    @inject(DI_TOKENS.Database) private readonly db: DatabaseService,
   ) {
     super()
   }

@@ -49,7 +49,7 @@ export class UsersController implements IController {
 
   @InertiaRoute()
   show(ctx: RouterContext) {
-    const user = { id: ctx.req.param('id'), name: 'Alice' }
+    const user = { id: ctx.param('id'), name: 'Alice' }
 
     return ctx.inertia('Users/Show', { user })
   }

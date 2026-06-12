@@ -72,7 +72,7 @@ show(ctx: RouterContext) {
 For the common case of a single UUID `id` parameter, Stratal provides a built-in schema:
 
 ```typescript
-import { uuidParamSchema } from 'stratal/router/schemas'
+import { uuidParamSchema } from 'stratal/router'
 
 @Route({
   params: uuidParamSchema,
@@ -88,7 +88,7 @@ show(ctx: RouterContext) {
 Use the `query` property to validate query string parameters:
 
 ```typescript
-import { paginationQuerySchema } from 'stratal/router/schemas'
+import { paginationQuerySchema } from 'stratal/router'
 
 @Route({
   query: paginationQuerySchema,
@@ -190,7 +190,7 @@ downloadFile(ctx: RouterContext) {
 
 ## Built-in schemas
 
-Stratal provides several reusable schemas you can import from `stratal/router/schemas`:
+Stratal provides several reusable schemas you can import from `stratal/router`:
 
 | Schema | Description |
 | --- | --- |

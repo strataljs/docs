@@ -52,13 +52,11 @@ describe('PostsController', () => {
       imports: [PostsModule],
     }).compile()
 
-    const client = module.createHttpClient()
-    const response = await client.get('/posts')
+    const response = await module.http.get('/posts').send()
 
-    await response
-      .assertInertia()
-      .assertInertiaComponent('posts/Index')
-      .assertInertiaPropExists('posts')
+    await response.assertInertia()
+    await response.assertInertiaComponent('posts/Index')
+    await response.assertInertiaPropExists('posts')
   })
 })
 ```
@@ -76,13 +74,14 @@ describe('PostsController', () => {
       imports: [PostsModule],
     }).compile()
 
-    const client = module.createHttpClient()
-    const response = await client.post('/posts', { body: {} })
+    const response = await module.http
+      .post('/posts')
+      .withBody({})
+      .send()
 
-    await response
-      .assertInertiaFlash('errors', {
-        title: expect.any(String),
-      })
+    await response.assertInertiaFlash('errors', {
+      title: expect.any(String),
+    })
   })
 })
 ```
@@ -97,18 +96,18 @@ it('validates with precognition', async () => {
     imports: [PostsModule],
   }).compile()
 
-  const client = module.createHttpClient()
-
-  const valid = await client.post('/posts', {
-    headers: { 'Precognition': 'true' },
-    body: { title: 'My Post', content: 'Hello world' },
-  })
+  const valid = await module.http
+    .post('/posts')
+    .withHeaders({ Precognition: 'true' })
+    .withBody({ title: 'My Post', content: 'Hello world' })
+    .send()
   await valid.assertSuccessfulPrecognition()
 
-  const invalid = await client.post('/posts', {
-    headers: { 'Precognition': 'true' },
-    body: {},
-  })
+  const invalid = await module.http
+    .post('/posts')
+    .withHeaders({ Precognition: 'true' })
+    .withBody({})
+    .send()
   await invalid.assertPrecognitionValidationErrors({
     title: expect.any(String),
   })

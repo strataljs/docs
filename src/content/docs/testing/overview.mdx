@@ -42,7 +42,7 @@ export default defineConfig({
 ```
 
 <Aside type="tip">
-  `stratalTest()` wraps `cloudflareTest` from `@cloudflare/vitest-pool-workers` and applies Stratal-specific defaults: a tslib alias for decorator helpers, ZenStack language mocks, a nodemailer mock, and SSR externals configuration. You do not need to configure these manually.
+  `stratalTest()` wraps `cloudflareTest` from `@cloudflare/vitest-pool-workers` and applies Stratal-specific defaults: a tslib alias for decorator helpers, ZenStack language mocks, and SSR externals configuration. You do not need to configure these manually. Email sending is handled separately at runtime: `compile()` installs an in-memory `TestEmailProvider` so tests never open a real SMTP connection.
 </Aside>
 
 <Aside type="note">

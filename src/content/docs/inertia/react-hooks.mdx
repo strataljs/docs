@@ -1,11 +1,11 @@
 ---
 title: React Hooks
-description: Use the useRoute and useI18n hooks in your React components for type-safe URL generation and translations.
+description: Use the useRoute, useI18n, and useSeo hooks in your React components for type-safe URL generation, translations, and page metadata.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-Stratal Inertia ships two React hooks that give your components access to server-side routing and internationalization data. Both hooks are available from `@stratal/inertia/react`.
+Stratal Inertia ships three React hooks that give your components access to server-side routing, internationalization, and SEO data. All three are available from `@stratal/inertia/react`.
 
 ## useRoute
 
@@ -31,7 +31,8 @@ const { route, current } = useRoute()
 | Return value | Type | Description |
 | --- | --- | --- |
 | `route(name, params?)` | `(name: string, params?: Record<string, string>) => string` | Generate a URL from a named route with optional parameters |
-| `current(name?)` | `(name?: string) => boolean` | Check if the current page matches a route name. Returns `true` for the active route when called without arguments. |
+| `current()` | `() => string \| null` | Return the current route name, or `null` when no route is matched |
+| `current(name)` | `(name: string) => boolean` | Check if the current page matches a route name. Accepts a dotted wildcard prefix such as `'users.*'`. |
 
 ### Example
 
@@ -117,3 +118,47 @@ export default function Greeting() {
 ```
 
 Translation keys use dot notation where the first segment is the namespace and the rest is the path within that namespace's messages. For example, `common.welcome` resolves to the `welcome` key in the `common` namespace.
+
+## useSeo
+
+The `useSeo` hook returns the resolved SEO metadata that the backend shared for the current page. The document head is kept in sync automatically (server injection on the initial paint plus a client runtime that re-syncs on navigation), so reach for this hook only when you want to read the metadata inside a component.
+
+### Prerequisites
+
+Provide SEO data from the server, either app-wide through the `seo` option on `InertiaModule.forRoot()` or per-request with `ctx.seo()` in a controller:
+
+```typescript
+@InertiaGet('/posts/:id')
+async show(ctx: RouterContext) {
+  const post = await this.posts.findOrFail(ctx.param('id'))
+
+  ctx.seo({
+    title: post.title,
+    description: post.excerpt,
+  })
+
+  return ctx.inertia('Posts/Show', { post })
+}
+```
+
+### API
+
+```tsx
+const seo = useSeo()
+```
+
+| Return value | Type | Description |
+| --- | --- | --- |
+| `seo` | `SeoData` | The resolved SEO data for the current page. Returns an empty object when no SEO data was shared. |
+
+### Example
+
+```tsx
+import { useSeo } from '@stratal/inertia/react'
+
+export default function PageTitle() {
+  const seo = useSeo()
+
+  return <h1>{seo.title ?? 'Untitled'}</h1>
+}
+```

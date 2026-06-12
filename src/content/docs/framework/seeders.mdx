@@ -127,7 +127,7 @@ export class DatabaseSeeder extends Seeder {
 
 ## Auto-discovery
 
-Seeders are automatically discovered from the module tree. Any class that extends `Seeder` and is listed in a module's `providers` array will be found by the CLI. Only bare class providers are scanned - value, factory, and existing providers are skipped.
+Seeders are automatically discovered from the module tree. Any class that extends `Seeder` and is listed in a module's `providers` array will be found by the CLI. Bare class and `useClass` providers are scanned; value and factory providers are skipped.
 
 ## How it works
 

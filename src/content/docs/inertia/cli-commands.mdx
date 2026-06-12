@@ -1,29 +1,29 @@
 ---
 title: CLI Commands
-description: Scaffold, develop, build, and generate types for your Inertia application using the @stratal/inertia CLI.
+description: Scaffold, develop, build, and generate types for your Inertia application using Quarry commands.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
 
-`@stratal/inertia` ships a standalone CLI that scaffolds, runs, builds, and generates types for your Inertia application. The binary is exposed as `inertia`, so you can invoke it with `npx inertia <command>` from any project that has `@stratal/inertia` installed.
+`@stratal/inertia` registers a set of Quarry commands that scaffold, run, build, and generate types for your Inertia application. They run through the core `quarry` binary, so you invoke them with `npx quarry <command>` from any project that has `@stratal/inertia` installed.
 
 ## Commands overview
 
 | Command | Description |
 | --- | --- |
-| `inertia install` | Scaffold the Inertia directory structure and starter files |
-| `inertia dev` | Start the Vite development server with HMR |
-| `inertia build` | Build client and SSR bundles for production |
-| `inertia types` | Generate TypeScript types for page components |
+| `inertia:install` | Scaffold the Inertia directory structure and starter files |
+| `inertia:dev` | Start the Vite development server with HMR |
+| `inertia:build` | Build client and SSR bundles for production |
+| `inertia:types` | Generate TypeScript types for page components |
 
-Run `npx inertia --help` to see the same summary in your terminal.
+Run `npx quarry help` to see every registered command in your terminal.
 
-## inertia install
+## inertia:install
 
 Scaffolds the Inertia directory structure and creates starter files so you can begin building immediately.
 
 ```bash
-npx inertia install
+npx quarry inertia:install
 ```
 
 This creates the following files:
@@ -32,10 +32,11 @@ This creates the following files:
 | --- | --- |
 | `src/inertia/app.tsx` | Client-side entry point |
 | `src/inertia/root.html` | Root HTML template |
+| `src/inertia/ssr.tsx` | SSR entry point |
 | `src/inertia/pages/Home.tsx` | Sample page component |
 | `src/inertia/public/.gitkeep` | Public assets directory |
 
-If `src/app.module.ts` exists, the command also adds an `InertiaModule.forRoot({ rootView })` import to your module - skipping the change if it's already configured.
+If `src/app.module.ts` exists, the command also adds an `InertiaModule.forRoot({ rootView, ssr })` import to your module, skipping the change if it is already configured.
 
 ### Flags
 
@@ -43,12 +44,12 @@ If `src/app.module.ts` exists, the command also adds an `InertiaModule.forRoot({
 | --- | --- |
 | `--skip-deps` | Skip printing the dependency install hint at the end. |
 
-## inertia dev
+## inertia:dev
 
 Starts the Vite development server with hot module replacement.
 
 ```bash
-npx inertia dev
+npx quarry inertia:dev
 ```
 
 <Aside type="tip">
@@ -61,27 +62,28 @@ This command auto-configures Vite with the Stratal Inertia plugins. Use a custom
 | --- | --- | --- |
 | `--port` | `5173` | Port for the Vite development server. |
 | `--host` | - | Expose the dev server to your local network. |
-| `--persist-to` | - | Path to persist Cloudflare Workers state between dev runs. |
+| `--inspector-port` | - | Worker debugger inspector port. Set a distinct value per worker to avoid port collisions when running multiple Inertia workers, or `false` to disable. |
+| `--persist-to` | - | Shared persist directory for the Cloudflare Vite plugin (relative to cwd). Use it to share R2/KV/cache emulator state across workers in dev. |
 
 ### Example
 
 ```bash
-npx inertia dev --port=3000 --host
+npx quarry inertia:dev --port=3000 --host
 ```
 
-## inertia build
+## inertia:build
 
 Builds the client bundle and, optionally, the SSR bundle for production deployment.
 
 ```bash
-npx inertia build
+npx quarry inertia:build
 ```
 
 ### Flags
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--out-dir` | `dist` | Output directory for the build. |
+| `--outDir` | `dist` | Output directory for the build. |
 | `--ssr` | - | Also build the SSR bundle. |
 
 ### Examples
@@ -89,21 +91,21 @@ npx inertia build
 Build both client and SSR bundles:
 
 ```bash
-npx inertia build --ssr
+npx quarry inertia:build --ssr
 ```
 
 Build to a custom output directory:
 
 ```bash
-npx inertia build --out-dir=build
+npx quarry inertia:build --outDir=build
 ```
 
-## inertia types
+## inertia:types
 
 Generates TypeScript type definitions for your page components. It scans `src/inertia/pages/` for React components and produces types for the page registry, enabling type-safe rendering from your controllers.
 
 ```bash
-npx inertia types
+npx quarry inertia:types
 ```
 
 ### Flags
@@ -117,9 +119,9 @@ npx inertia types
 Run in watch mode during development:
 
 ```bash
-npx inertia types --watch
+npx quarry inertia:types --watch
 ```
 
 <Aside type="note">
-When using `npx inertia dev`, types are regenerated automatically on HMR via the Vite plugin. The standalone `inertia types` command is useful for CI pipelines or when you are not running the dev server.
+When using `npx quarry inertia:dev`, types are regenerated automatically on HMR via the Vite plugin. The standalone `inertia:types` command is useful for CI pipelines or when you are not running the dev server.
 </Aside>

@@ -33,15 +33,15 @@ InertiaModule.forRoot({
   sharedData: {
     appName: 'My App',
     currentUser: (ctx: RouterContext) => {
-      return ctx.get('user') ?? null
+      return ctx.c.get('user') ?? null
     },
     flash: (ctx: RouterContext) => {
       return {
-        success: ctx.get('flashSuccess') ?? null,
-        error: ctx.get('flashError') ?? null,
+        success: ctx.c.get('flashSuccess') ?? null,
+        error: ctx.c.get('flashError') ?? null,
       }
     },
-    locale: (ctx: RouterContext) => ctx.get('locale') ?? 'en',
+    locale: (ctx: RouterContext) => ctx.c.get('locale') ?? 'en',
   },
 })
 ```
@@ -52,19 +52,16 @@ InertiaModule.forRoot({
 
 ## Per-request sharing
 
-You can also share data from within a controller or middleware using `InertiaService.share()`:
+You can also share data from within a controller or middleware using `ctx.share(key, value)`:
 
 ```typescript
 import { Transient } from 'stratal/di'
-import { InertiaService } from '@stratal/inertia'
 
 @Transient()
 export class NotificationsMiddleware {
-  constructor(private readonly inertia: InertiaService) {}
-
   async handle(ctx: RouterContext, next: () => Promise<void>) {
     const count = await this.getUnreadCount(ctx)
-    this.inertia.share('notificationCount', count)
+    ctx.share('notificationCount', count)
 
     await next()
   }
@@ -137,7 +134,7 @@ Merge props combine new data with the existing client-side data rather than repl
 ```typescript
 @InertiaRoute()
 index(ctx: RouterContext) {
-  const page = Number(ctx.req.query('page') ?? '1')
+  const page = Number(ctx.query('page') ?? '1')
 
   return ctx.inertia('Posts/Index', {
     posts: ctx.merge(async () => {
@@ -214,7 +211,7 @@ show(ctx: RouterContext) {
 
     // Always fresh, even on partial reloads
     currentBalance: ctx.always(async () => {
-      return await this.walletService.getBalance(ctx.get('userId'))
+      return await this.walletService.getBalance(ctx.c.get('userId'))
     }),
   })
 }
@@ -241,11 +238,11 @@ export class PostsController implements IController {
 
   @InertiaRoute()
   async index(ctx: RouterContext) {
-    const page = Number(ctx.req.query('page') ?? '1')
+    const page = Number(ctx.query('page') ?? '1')
 
     return ctx.inertia('Posts/Index', {
       // Standard prop - sent immediately
-      filters: { page, search: ctx.req.query('search') ?? '' },
+      filters: { page, search: ctx.query('search') ?? '' },
 
       // Merge prop - appends to existing list on pagination
       posts: ctx.merge(async () => {
@@ -266,7 +263,7 @@ export class PostsController implements IController {
 
   @InertiaRoute()
   async show(ctx: RouterContext) {
-    const id = ctx.req.param('id')
+    const id = ctx.param('id')
 
     return ctx.inertia('Posts/Show', {
       post: await this.posts.findOrFail(id),
